@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>SG Ingresos</title>
+<script>
+  // GitHub Pages distingue mayúsculas: /Puesto, /PUESTOS, /app... se corrigen solos.
+  (function () {
+    var p = location.pathname.toLowerCase().replace(/^\/sgin/, '');
+    var destino = null;
+    if (/^\/(puesto|puestos|app|guardia|celular|p)(\/|$)/.test(p)) destino = '/puesto/';
+    else if (/^\/(panel|admin|cliente|clientes)(\/|$)/.test(p)) destino = '/';
+    if (destino) location.replace(destino + location.search + location.hash);
+  })();
+</script>
+<style>
+  body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #0F6B3E; color: #fff; font-family: system-ui, sans-serif; padding: 24px; text-align: center; }
+  h1 { font-size: 40px; margin: 0; letter-spacing: 1px; }
+  p { margin: 0 0 8px; color: #D5EBDD; }
+  a { display: block; min-width: 260px; padding: 16px 20px; border-radius: 12px; background: #fff; color: #0F6B3E; font-weight: 700; text-decoration: none; font-size: 17px; }
+</style>
+</head>
+<body>
+  <h1>SG INGRESOS</h1>
+  <p>Esa dirección no existe. Elegí a dónde ir:</p>
+  <a href="/">Panel de clientes y Admin Spartan</a>
+  <a href="/puesto/">App Puesto (celular del puesto)</a>
+</body>
+</html>

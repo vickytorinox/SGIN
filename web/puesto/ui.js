@@ -103,3 +103,8 @@ export function toast(msg, kind) {
   setTimeout(() => t.classList.add('out'), 3200);
   setTimeout(() => t.remove(), 3800);
 }
+
+/** Reemplaza el contenido de un elemento ignorando null/false (evita que aparezca el texto "null"). */
+export function setKids(el, ...kids) {
+  el.replaceChildren(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false && k !== ''));
+}

@@ -1,6 +1,6 @@
 // SG Ingresos · Panel Cliente y Admin Spartan
 import { api } from '../puesto/api.js';
-import { h, chips, badge, toast } from '../puesto/ui.js';
+import { h, chips, badge, toast, setKids } from '../puesto/ui.js';
 
 const P = { sesion: null, usuario: null, clientes: [], cliente_id: '', view: 'movimientos', est: null };
 const $app = document.getElementById('app');
@@ -27,7 +27,7 @@ function salir() {
 function pantallaLogin(msg) {
   const btn = h('div', { id: 'gbtn' });
   const err = h('div', { class: 'banner bad', hidden: !msg }, msg || '');
-  $app.replaceChildren(h('div', { class: 'login' },
+  setKids($app, h('div', { class: 'login' },
     h('div', { class: 'h logo' }, 'SG INGRESOS'),
     h('p', {}, 'Panel de clientes y Admin Spartan'),
     h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Ingresá con tu cuenta de Google autorizada.'), btn, err)));
@@ -89,7 +89,7 @@ function render() {
     : null;
   if (selCliente) selCliente.value = P.cliente_id;
   const main = h('main', { class: 'main' }, selCliente, (VISTAS[P.view] || VISTAS.movimientos)());
-  $app.replaceChildren(h('div', { class: 'layout' }, side, main));
+  setKids($app, h('div', { class: 'layout' }, side, main));
 }
 
 function modal(...contenido) {
@@ -169,11 +169,11 @@ VISTAS.movimientos = () => {
   ];
   const buscar = async () => {
     Object.assign(F, { objetivo_id: f.objetivo.value, desde: f.desde.value, hasta: f.hasta.value, dni: f.dni.value, nombre: f.nombre.value, sentido: f.sentido.value, categoria: f.categoria.value, hdesde: f.hdesde.value, hhasta: f.hhasta.value, solo_alertas: f.alertas.value === '1' });
-    res.replaceChildren(h('p', { class: 'muted' }, 'Buscando…'));
+    setKids(res, h('p', { class: 'muted' }, 'Buscando…'));
     try {
       const r = await call('panel.movimientos', Object.assign({ cliente_id: P.cliente_id }, F));
       const m = r.metricas;
-      res.replaceChildren(
+      setKids(res, 
         h('div', { class: 'metrics' },
           [['Registros', m.total], ['Ingresos', m.ingresos], ['Egresos', m.egresos], ['Personas distintas', m.personas], ['Egresos con foto', m.egresos_con_foto === null ? '—' : m.egresos_con_foto + '%']]
             .map(x => h('div', { class: 'metric' }, h('div', { class: 'v' }, String(x[1])), h('div', { class: 'k' }, x[0])))),
@@ -182,7 +182,7 @@ VISTAS.movimientos = () => {
         tabla(cols, r.rows, row => modal(h('h2', { class: 'sect' }, row.apellido + (row.nombre ? ', ' + row.nombre : '')),
           ...cols.filter(c => row[c.key] && (!Array.isArray(row[c.key]) || row[c.key].length)).map(c => h('div', {}, h('strong', {}, c.label + ': '), c.render ? c.render(row) : String(row[c.key]))),
           row.excepcional ? h('div', { class: 'banner bad' }, 'Ingreso excepcional: ' + row.excepcional) : null)));
-    } catch (e) { res.replaceChildren(h('div', { class: 'banner bad' }, e.message)); }
+    } catch (e) { setKids(res, h('div', { class: 'banner bad' }, e.message)); }
   };
   setTimeout(buscar, 0);
   return h('div', { style: 'display:flex;flex-direction:column;gap:16px' },
@@ -198,9 +198,9 @@ VISTAS.movimientos = () => {
 VISTAS.adentro = () => {
   const box = h('div', {}, h('p', { class: 'muted' }, 'Cargando…'));
   call('panel.adentro', { cliente_id: P.cliente_id }).then(r => {
-    box.replaceChildren(h('p', { class: 'muted' }, r.adentro.length + ' personas sin salida registrada (últimos 7 días)'),
+    setKids(box, h('p', { class: 'muted' }, r.adentro.length + ' personas sin salida registrada (últimos 7 días)'),
       tabla([{ label: 'Persona', key: 'nombre' }, { label: 'DNI', key: 'dni' }, { label: 'Categoría', key: 'categoria' }, { label: 'Autoriza', key: 'autoriza' }, { label: 'Desde', key: 'desde' }, { label: 'Objetivo', key: 'objetivo' }, { label: 'Puesto', key: 'puesto' }], r.adentro));
-  }).catch(e => box.replaceChildren(h('div', { class: 'banner bad' }, e.message)));
+  }).catch(e => setKids(box, h('div', { class: 'banner bad' }, e.message)));
   return h('div', { style: 'display:flex;flex-direction:column;gap:16px' }, h('h1', { class: 'h title' }, 'Adentro ahora'), box);
 };
 
@@ -210,15 +210,15 @@ VISTAS.personas = () => {
   const est = select([{ value: '', label: 'Todos' }, { value: 'PROHIBIDO', label: 'Prohibidos' }, { value: 'AUTORIZADO', label: 'Autorizados' }, { value: 'EVENTUAL', label: 'Eventuales' }], 'PROHIBIDO');
   const box = h('div', {});
   const buscar = async () => {
-    box.replaceChildren(h('p', { class: 'muted' }, 'Buscando…'));
+    setKids(box, h('p', { class: 'muted' }, 'Buscando…'));
     try {
       const r = await call('panel.personas', { cliente_id: P.cliente_id, q: q.value, estado: est.value });
-      box.replaceChildren(tabla([
+      setKids(box, tabla([
         { label: 'Apellido', key: 'apellido' }, { label: 'Nombre', key: 'nombre' }, { label: 'Documento', key: 'nro_doc' }, { label: 'Categoría', key: 'categoria' },
         { label: 'Empresa / servicio', key: 'empresa', render: p => p.empresa || p.subtipo || '' }, { label: 'Patentes', key: 'patentes', render: p => p.patentes.join(', ') },
         { label: 'Estado', key: 'estado', render: p => badge(p.estado || '—', p.estado === 'PROHIBIDO' ? 'bad' : (p.estado === 'EVENTUAL' ? 'warn' : 'ok')) }
       ], r.personas, p => detallePersona(p.persona_id, buscar)));
-    } catch (e) { box.replaceChildren(h('div', { class: 'banner bad' }, e.message)); }
+    } catch (e) { setKids(box, h('div', { class: 'banner bad' }, e.message)); }
   };
   q.addEventListener('keydown', e => { if (e.key === 'Enter') buscar(); });
   est.addEventListener('change', buscar);
@@ -259,7 +259,7 @@ function formEstado(persona, nuevo, alCambiar) {
   const oNom = input(), oLote = input({ inputmode: 'numeric' }), mot = h('textarea', { class: 'in', rows: '3' });
   const err = h('div', { class: 'banner bad', hidden: true });
   const cuerpo = h('div', { style: 'display:flex;flex-direction:column;gap:12px' });
-  const pintar = () => cuerpo.replaceChildren(
+  const pintar = () => setKids(cuerpo, 
     h('div', { class: 'field' }, h('span', { class: 'lbl' }, 'Quién lo ordena'), chips(['Residente', 'Administración', 'Intendencia'], E.tipo, v => { E.tipo = v; pintar(); })),
     E.tipo === 'Residente' ? h('div', { class: 'grid-f' }, campo('Nombre y apellido del residente', oNom, true), campo('Lote', oLote, true)) : campo('Nombre de quien lo ordena', oNom),
     h('div', { class: 'field' }, h('span', { class: 'lbl' }, 'Medio'), chips(['WhatsApp', 'Llamada', 'Mail', 'Presencial'], E.medio, v => { E.medio = v; pintar(); })),
@@ -297,7 +297,7 @@ VISTAS.estructura = () => {
   const box = h('div', { style: 'display:flex;flex-direction:column;gap:16px' }, h('p', { class: 'muted' }, 'Cargando…'));
   const recargar = async () => { await estructura(true); await cargar(); };
   estructura().then(E => {
-    box.replaceChildren(
+    setKids(box, 
       h('div', { class: 'row' },
         h('button', { class: 'btn', type: 'button', onclick: () => formCliente(null, recargar) }, '+ Nuevo cliente')),
       E.clientes.length ? null : h('p', { class: 'muted' }, 'Todavía no hay clientes.'),
@@ -328,7 +328,7 @@ VISTAS.estructura = () => {
                 h('button', { class: 'btnsm', type: 'button', onclick: () => formEditarPuesto(p, recargar) }, 'Editar'),
                 h('button', { class: 'btnsm red', type: 'button', onclick: () => eliminar('puesto', p, recargar) }, 'Eliminar')));
           }))))))));
-  }).catch(e => box.replaceChildren(h('div', { class: 'banner bad' }, e.message)));
+  }).catch(e => setKids(box, h('div', { class: 'banner bad' }, e.message)));
   return h('div', { style: 'display:flex;flex-direction:column;gap:16px' }, h('h1', { class: 'h title' }, 'Clientes, objetivos y puestos'), box);
 };
 
@@ -389,9 +389,24 @@ async function generarCodigo(p, alGuardar) {
   const et = input({ value: 'Celular del puesto' });
   formSimple('Activar celular · ' + p.nombre, [campo('Etiqueta del dispositivo', et), h('p', { class: 'muted' }, 'Se genera un código de un solo uso, válido por 48 horas.')], async () => {
     const r = await call('admin.dispositivo.codigo', { puesto_id: p.puesto_id, etiqueta: et.value });
-    modal(h('h2', { class: 'sect' }, 'Código de activación'), h('div', { class: 'code' }, r.codigo),
-      h('p', {}, 'Abrí la App Puesto en el celular del puesto y cargá este código. Vence el ' + r.vence + '.'),
-      h('div', { class: 'banner warn' }, 'Este código se muestra una sola vez. No lo envíes por grupos ni lo dejes escrito.'));
+    const base = location.origin + (location.pathname.indexOf('/SGIN/') === 0 ? '/SGIN' : '');
+    const link = base + '/puesto/#codigo=' + encodeURIComponent(r.codigo);
+    const qrBox = h('div', { class: 'qr', role: 'img', 'aria-label': 'Código QR para activar el celular' });
+    try {
+      const q = window.qrcode(0, 'M'); q.addData(link); q.make();
+      qrBox.innerHTML = q.createSvgTag({ cellSize: 6, margin: 2, scalable: true });   // SVG generado localmente, sin datos de usuarios
+    } catch (e) { qrBox.textContent = ''; }
+    modal(h('h2', { class: 'sect' }, 'Activar celular · ' + p.nombre),
+      h('div', { class: 'split', style: 'align-items:center' },
+        qrBox,
+        h('div', { class: 'grow', style: 'gap:10px' },
+          h('p', {}, h('strong', {}, '1. '), 'Con el celular del puesto, escaneá este QR con la cámara.'),
+          h('p', {}, h('strong', {}, '2. '), 'Se abre la App Puesto con el código ya cargado: tocá "Activar este celular".'),
+          h('p', {}, h('strong', {}, '3. '), 'En el menú del navegador elegí "Agregar a la pantalla de inicio".'),
+          h('p', { class: 'muted' }, 'Sin cámara: abrí ' + base.replace(/^https?:\/\//, '') + '/puesto y escribí el código.'))),
+      h('div', { class: 'code' }, r.codigo),
+      h('p', { class: 'muted' }, 'Vence el ' + r.vence + ' y sirve una sola vez.'),
+      h('div', { class: 'banner warn' }, 'Este código y su QR se muestran una sola vez. No los envíes por grupos ni los dejes impresos a la vista.'));
     alGuardar();
   });
 }
@@ -404,7 +419,7 @@ VISTAS.formulario = () => {
   const box = h('div', { style: 'display:flex;flex-direction:column;gap:16px' }, h('p', { class: 'muted' }, 'Cargando…'));
   estructura().then(async E => {
     const objs = E.objetivos.filter(o => activoV(o.activo));
-    if (!objs.length) { box.replaceChildren(h('p', { class: 'muted' }, 'Primero creá un objetivo.')); return; }
+    if (!objs.length) { setKids(box, h('p', { class: 'muted' }, 'Primero creá un objetivo.')); return; }
     if (!P.cfgObjetivo || !objs.some(o => o.objetivo_id === P.cfgObjetivo)) P.cfgObjetivo = objs[0].objetivo_id;
     const sel = select(objs.map(o => ({ value: o.objetivo_id, label: (E.clientes.filter(c => c.cliente_id === o.cliente_id)[0] || {}).nombre + ' › ' + o.nombre })), P.cfgObjetivo);
     sel.onchange = () => { P.cfgObjetivo = sel.value; P.cfg = null; render(); };
@@ -413,7 +428,7 @@ VISTAS.formulario = () => {
       P.cfg = r.config; P.cfg._id = P.cfgObjetivo; P.cfg._tipo = r.tipo; P.cfgTab = P.cfg.categorias[0].key; P.cfgDirty = false;
     }
     pintarConfig(box, sel);
-  }).catch(e => box.replaceChildren(h('div', { class: 'banner bad' }, e.message)));
+  }).catch(e => setKids(box, h('div', { class: 'banner bad' }, e.message)));
   return h('div', { style: 'display:flex;flex-direction:column;gap:16px' }, h('h1', { class: 'h title' }, 'Formulario por objetivo'),
     h('p', { class: 'muted' }, 'Qué ve y qué completa el guardia según el tipo de ingreso. Documento, nombre, apellido, tipo de ingreso y quién autoriza son fijos.'), box);
 };
@@ -482,7 +497,7 @@ function pintarConfig(box, sel) {
       (cat.docs || []).filter(d => d.activo !== false).map(d => h('div', { class: 'px', style: 'height:auto;padding:6px 8px;font-size:11.5px;font-weight:600' }, d.label, d.bloquea ? h('span', { class: 'req' }, ' · bloquea') : null)),
       cat.cacheo && cac.activo ? h('div', { class: 'px', style: 'height:auto;padding:6px 8px;font-size:11.5px;font-weight:600' }, 'Cacheo (' + cac.momento + ')' + (cac.obligatoria ? ' · foto obligatoria' : '')) : null)));
 
-  box.replaceChildren(
+  setKids(box, 
     h('div', { class: 'card' }, h('div', { class: 'grid-f' }, campo('Objetivo', sel), C.etiquetas && 'lote' in C.etiquetas ? campo('Etiqueta de “Lote”', etiq) : null, h('div', { class: 'row' }, guardar)),
       P.cfgDirty ? h('div', { class: 'banner warn' }, 'Hay cambios sin guardar.') : null),
     h('div', { class: 'chips' }, C.categorias.map(c => h('button', { type: 'button', class: 'chip' + (c.key === P.cfgTab ? ' on' : ''), onclick: () => { P.cfgTab = c.key; pintarConfig(box, sel); } }, c.label + (c.activa === false ? ' (oculta)' : '')))),
@@ -528,13 +543,13 @@ VISTAS.guardias = () => {
   const box = h('div', {}, h('p', { class: 'muted' }, 'Cargando…'));
   const cargarG = async () => {
     const [E, r] = await Promise.all([estructura(), call('admin.guardias')]);
-    box.replaceChildren(tabla([
+    setKids(box, tabla([
       { label: 'CUIL', key: 'cuil' }, { label: 'Apellido', key: 'apellido' }, { label: 'Nombre', key: 'nombre' },
       { label: 'Puestos habilitados', key: 'puestos', render: g => h('div', {}, String(g.puestos || '').split(',').filter(Boolean).map(id => h('div', {}, nombreAsignacion(E, id)))) },
       { label: 'Estado', key: 'activo', render: g => badge(g.activo ? 'Activo' : 'Inactivo', g.activo ? 'ok' : 'warn') }
     ], r.guardias, g => formGuardia(g, E, cargarG)));
   };
-  cargarG().catch(e => box.replaceChildren(h('div', { class: 'banner bad' }, e.message)));
+  cargarG().catch(e => setKids(box, h('div', { class: 'banner bad' }, e.message)));
   return h('div', { style: 'display:flex;flex-direction:column;gap:16px' },
     h('div', { class: 'spread' }, h('h1', { class: 'h title' }, 'Vigiladores'), h('button', { class: 'btn', type: 'button', onclick: async () => formGuardia(null, await estructura(true), cargarG) }, '+ Nuevo vigilador')),
     h('p', { class: 'muted' }, 'El CUIL es lo que el vigilador ingresa en la App Puesto. Solo puede operar en los puestos habilitados.'), box);
@@ -551,7 +566,7 @@ function formGuardia(g, E, alGuardar) {
   };
   const pintar = () => {
     const todos = sel.has('*');
-    arbol.replaceChildren(
+    setKids(arbol, 
       chk('*', 'Todos los puestos de todos los clientes', { cls: 'strong' }),
       ...E.clientes.filter(c => activoV(c.activo)).map(c => {
         const objs = E.objetivos.filter(o => o.cliente_id === c.cliente_id && activoV(o.activo));
@@ -584,13 +599,13 @@ VISTAS.usuarios = () => {
   const cargarU = async () => {
     const [E, r] = await Promise.all([estructura(), call('admin.usuarios')]);
     const nombreCli = id => id === '*' ? 'Todos' : ((E.clientes.filter(c => c.cliente_id === id)[0] || {}).nombre || id);
-    box.replaceChildren(tabla([
+    setKids(box, tabla([
       { label: 'Email', key: 'email' }, { label: 'Nombre', key: 'nombre' }, { label: 'Rol', key: 'rol', render: u => ROL_LABEL[u.rol] || u.rol },
       { label: 'Clientes', key: 'clientes', render: u => String(u.clientes || '').split(',').filter(Boolean).map(nombreCli).join(', ') },
       { label: 'Estado', key: 'activo', render: u => badge(u.activo ? 'Activo' : 'Inactivo', u.activo ? 'ok' : 'warn') }
     ], r.usuarios, u => formUsuario(u, E, cargarU)));
   };
-  cargarU().catch(e => box.replaceChildren(h('div', { class: 'banner bad' }, e.message)));
+  cargarU().catch(e => setKids(box, h('div', { class: 'banner bad' }, e.message)));
   return h('div', { style: 'display:flex;flex-direction:column;gap:16px' },
     h('div', { class: 'spread' }, h('h1', { class: 'h title' }, 'Usuarios del panel'), h('button', { class: 'btn', type: 'button', onclick: async () => formUsuario(null, await estructura(), cargarU) }, '+ Nuevo usuario')),
     h('p', { class: 'muted' }, 'Administración e Intendencia ven solo sus clientes. Los supervisores Spartan pueden aplicar y levantar prohibiciones por pedido. Pueden ser cuentas Gmail personales.'), box);
@@ -608,8 +623,8 @@ function formUsuario(u, E, alGuardar) {
 
 VISTAS.auditoria = () => {
   const box = h('div', {}, h('p', { class: 'muted' }, 'Cargando…'));
-  call('admin.auditoria').then(r => box.replaceChildren(tabla([{ label: 'Fecha', key: 'fecha' }, { label: 'Quién', key: 'actor' }, { label: 'Acción', key: 'accion' }, { label: 'Entidad', key: 'entidad' }, { label: 'Detalle', key: 'despues' }], r.rows)))
-    .catch(e => box.replaceChildren(h('div', { class: 'banner bad' }, e.message)));
+  call('admin.auditoria').then(r => setKids(box, tabla([{ label: 'Fecha', key: 'fecha' }, { label: 'Quién', key: 'actor' }, { label: 'Acción', key: 'accion' }, { label: 'Entidad', key: 'entidad' }, { label: 'Detalle', key: 'despues' }], r.rows)))
+    .catch(e => setKids(box, h('div', { class: 'banner bad' }, e.message)));
   return h('div', { style: 'display:flex;flex-direction:column;gap:16px' }, h('h1', { class: 'h title' }, 'Auditoría'), h('p', { class: 'muted' }, 'Últimas 400 acciones de estructura, accesos y configuración. La auditoría de cada cliente está en su planilla.'), box);
 };
 

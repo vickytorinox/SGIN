@@ -1,7 +1,7 @@
 // SG Ingresos · App Puesto (PWA offline-first)
 import { kv, cola } from './store.js';
 import { api } from './api.js';
-import { h, icon, chips, labeled, badge, fotoBoton, blobToB64, toast } from './ui.js';
+import { h, icon, chips, labeled, badge, fotoBoton, blobToB64, toast, setKids } from './ui.js';
 
 const LOCK_MS = 10 * 60 * 1000;           // bloqueo por inactividad
 const SYNC_MS = 30 * 1000;                // reintento de envíos
@@ -103,7 +103,7 @@ function go(screen, ctx) {
 function render() {
   const fn = SCREENS[S.screen] || SCREENS.cargando;
   const conHeader = ['activar', 'login', 'cargando'].indexOf(S.screen) < 0;
-  $app.replaceChildren(...(conHeader ? [header(), fn()] : [fn()]));
+  setKids($app, ...(conHeader ? [header(), fn()] : [fn()]));
   actualizarIndicadores();
 }
 
@@ -213,8 +213,14 @@ async function desactivado(msg) {
 /* ---------------- pantallas: activación y login ---------------- */
 SCREENS.cargando = () => h('main', { class: 'splash' }, h('div', { class: 'h logo' }, 'SG INGRESOS'));
 
+function codigoDelLink() {
+  const m = /[#&]codigo=([A-Za-z0-9-]+)/.exec(location.hash || '');
+  if (m) history.replaceState(null, '', location.pathname);   // el código no queda en el historial
+  return m ? decodeURIComponent(m[1]) : '';
+}
+
 SCREENS.activar = () => {
-  const inp = h('input', { class: 'in big', placeholder: 'XXXXX-XXXXX', autocomplete: 'off', autocapitalize: 'characters' });
+  const inp = h('input', { class: 'in big', placeholder: 'XXXXX-XXXXX', autocomplete: 'off', autocapitalize: 'characters', value: S.ctx.codigo || '' });
   const err = h('div', { class: 'banner bad', hidden: !S.ctx.msg }, S.ctx.msg || '');
   const btn = h('button', { class: 'btn', type: 'button' }, 'Activar este celular');
   btn.onclick = async () => {
@@ -803,7 +809,7 @@ SCREENS.adentro = () => {
       return words.every(w => t.indexOf(w) >= 0) || (qd.length >= 3 && digits(x.dni).indexOf(qd) >= 0);
     });
     contador.textContent = (words.length ? vis.length + ' de ' : '') + lista.length + (lista.length === 1 ? ' persona sin salida registrada' : ' personas sin salida registrada');
-    lista$.replaceChildren(...vis.slice(0, 150).map(x => h('div', { class: 'card row' },
+    setKids(lista$, ...vis.slice(0, 150).map(x => h('div', { class: 'card row' },
       h('div', { class: 'grow' }, h('div', { class: 'strong' }, x.nombre), h('div', { class: 'muted' }, [x.dni ? 'DNI ' + x.dni : '', x.detalle].filter(Boolean).join(' · ')), h('div', { class: 'muted small' }, 'Entró ' + x.hora)),
       h('button', { class: 'btnsm', type: 'button', onclick: async ev => {
         ev.currentTarget.disabled = true;
@@ -835,7 +841,7 @@ SCREENS.adentro = () => {
       .forEach(i => lista.unshift({ reg_id: i.id, nombre: i.resumen.nombre, dni: i.mov.persona.nro_doc, patente: (i.mov.campos || {}).patente || '', lote: (i.mov.autoriza || {}).lote || '', detalle: i.resumen.det + ' · pendiente de envío', hora: new Date(i.creado).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }));
     const vistos = {};
     lista = lista.filter(x => salidas.indexOf(x.reg_id) < 0).filter(x => { const k = x.dni ? digits(x.dni) : x.reg_id; if (vistos[k]) return false; vistos[k] = 1; return true; });
-    cont.replaceChildren(...[aviso ? h('div', { class: 'banner warn' }, aviso) : null, labeled('Buscar', q), contador, lista$].filter(Boolean));
+    setKids(cont, ...[aviso ? h('div', { class: 'banner warn' }, aviso) : null, labeled('Buscar', q), contador, lista$].filter(Boolean));
     pintar();
     setTimeout(() => q.focus(), 50);
   })();
@@ -887,7 +893,7 @@ SCREENS.prohibir = () => {
 SCREENS.pendientes = () => {
   const cont = h('div', { class: 'content' });
   cola.all().then(items => {
-    cont.replaceChildren(
+    setKids(cont, 
       h('p', { class: 'muted' }, items.length ? 'Estos registros están guardados en el celular y se envían solos cuando hay señal. No borres los datos del navegador ni desinstales la app.' : 'No hay registros pendientes.'),
       ...items.map(i => h('div', { class: 'card' },
         h('div', { class: 'strong' }, (i.resumen && i.resumen.nombre) || i.tipo),
@@ -904,7 +910,9 @@ async function init() {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   S.token = (await kv.get('token')) || null;
   S.bundle = (await kv.get('bundle')) || null;
-  if (!S.token) return go('activar', {});
+  const codigo = codigoDelLink();
+  if (!S.token) return go('activar', { codigo: codigo });
+  if (codigo) toast('Este celular ya está activado.');
   if (sesionValida() && S.bundle) { go('home'); sync(); refrescar(); return; }
   go('login', {});
   sync();

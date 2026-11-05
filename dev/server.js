@@ -63,7 +63,7 @@ const server = http.createServer((req, res) => {
   let p = path.normalize(path.join(WEB, decodeURIComponent(url.pathname)));
   if (!p.startsWith(WEB)) { res.writeHead(403); res.end(); return; }
   if (fs.existsSync(p) && fs.statSync(p).isDirectory()) p = path.join(p, 'index.html');
-  if (!fs.existsSync(p)) { res.writeHead(404); res.end('No encontrado'); return; }
+  if (!fs.existsSync(p)) { res.writeHead(404, { 'Content-Type': MIME['.html'] }); res.end(fs.readFileSync(path.join(WEB, '404.html'))); return; }   // igual que GitHub Pages
   let data = fs.readFileSync(p);
   if (p.endsWith('.html')) data = Buffer.from(String(data).replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/, '')); // la CSP real apunta a Google
   res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream', 'Cache-Control': 'no-store' });

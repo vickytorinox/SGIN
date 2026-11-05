@@ -3,18 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0F6B3E">
 <meta name="robots" content="noindex, nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src https://fonts.gstatic.com; img-src 'self' blob: data: https://*.googleusercontent.com; frame-src https://accounts.google.com/gsi/; connect-src https://script.google.com https://script.googleusercontent.com https://accounts.google.com/gsi/; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <title>SG Ingresos</title>
 <link rel="icon" href="./puesto/icons/icon-192.png">
-<style>
-  body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: #0F6B3E; color: #fff; font-family: system-ui, sans-serif; padding: 24px; text-align: center; }
-  h1 { font-size: 44px; margin: 0; letter-spacing: 1px; }
-  a { display: block; min-width: 260px; padding: 16px 20px; border-radius: 12px; background: #fff; color: #0F6B3E; font-weight: 700; text-decoration: none; font-size: 17px; }
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="./panel/panel.css">
+<script src="./config.js"></script>
+<script src="./panel/vendor/qrcode.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script type="module" src="./panel/panel.js"></script>
 </head>
 <body>
-  <h1>SG INGRESOS</h1>
-  <a href="./puesto/">App Puesto (celular del puesto)</a>
-  <a href="./panel/">Panel de clientes y Admin Spartan</a>
+<div id="app"><div class="splash"><div class="h logo">SG INGRESOS</div></div></div>
+<noscript>Este panel necesita JavaScript.</noscript>
 </body>
 </html>
