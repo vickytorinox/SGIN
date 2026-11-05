@@ -109,12 +109,23 @@ function guardia_(ctx, cuil) {
   const c = digits_(cuil);
   if (c.length < 8) throw apiError_('cuil_invalido', 'Ingresá tu CUIL.');
   throttle_('cuil:' + ctx.dispositivo_id, 30);
+  const cache = CacheService.getScriptCache();
+  const ck = 'g:' + c + ':' + ctx.puesto.puesto_id;
+  const hit = cache.get(ck);
+  if (hit) return JSON.parse(hit);
   const g = findBy_(msheet_('Guardias'), 'cuil', c)[0];
   if (!g || !activo_(g.activo)) throw apiError_('cuil_invalido', 'CUIL no habilitado.');
   const puestos = String(g.puestos || '').split(',').map(s => s.trim()).filter(Boolean);
   const habilitado = puestos.indexOf('*') >= 0 || puestos.indexOf(ctx.puesto.puesto_id) >= 0 || puestos.indexOf(ctx.objetivo.objetivo_id) >= 0;
   if (!habilitado) throw apiError_('cuil_invalido', 'CUIL no habilitado en este puesto.');
-  return { cuil: c, nombre: (g.nombre + ' ' + g.apellido).trim() };
+  const out = { cuil: c, nombre: (g.nombre + ' ' + g.apellido).trim() };
+  cache.put(ck, JSON.stringify(out), 120);   // 2 min: acelera la búsqueda sin demorar mucho una baja
+  return out;
+}
+
+function olvidarGuardiaCache_(cuil) {
+  const cache = CacheService.getScriptCache();
+  readAll_(msheet_('Puestos')).forEach(p => cache.remove('g:' + digits_(cuil) + ':' + p.puesto_id));
 }
 
 /* ---------------- Panel / Admin (Google) ---------------- */

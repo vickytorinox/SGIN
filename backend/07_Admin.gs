@@ -149,6 +149,7 @@ function adminGuardiaGuardar_(r) {
   const sh = msheet_('Guardias');
   return withLock_(() => {
     const g = findBy_(sh, 'cuil', cuil)[0];
+    olvidarGuardiaCache_(cuil);
     if (g) {
       update_(sh, g._row, datos);
       auditGlobal_(u.email, 'editar_guardia', 'Guardias', cuil, '', JSON.stringify(datos));
@@ -191,4 +192,44 @@ function adminAuditoria_(r) {
   const head = head_(sh);
   const vals = sh.getRange(last - n + 1, 1, n, head.length).getValues().reverse();
   return { rows: vals.map(v => ({ fecha: fecha_(v[0]), actor: v[1], accion: v[2], entidad: v[3], entidad_id: v[4], despues: String(v[6]).slice(0, 200) })) };
+}
+
+/** Revoca todos los celulares activos o pendientes de un puesto. */
+function revocarDispositivosPuesto_(puesto_id) {
+  const sh = msheet_('Dispositivos');
+  findBy_(sh, 'puesto_id', puesto_id).forEach(d => {
+    if (d.estado === 'revocado') return;
+    olvidarDispositivoCache_(d.token_hash);
+    update_(sh, d._row, { estado: 'revocado', token_hash: '', codigo_hash: '' });
+  });
+}
+
+/**
+ * Eliminar = baja lógica: deja de aparecer y sus celulares dejan de funcionar,
+ * pero el historial de movimientos se conserva.
+ */
+function adminPuestoEliminar_(r) {
+  const u = admin_(r);
+  const sh = msheet_('Puestos');
+  const p = findBy_(sh, 'puesto_id', r.puesto_id)[0];
+  if (!p) throw apiError_('no_encontrado', 'Puesto inexistente.');
+  update_(sh, p._row, { activo: false });
+  revocarDispositivosPuesto_(p.puesto_id);
+  auditGlobal_(u.email, 'eliminar_puesto', 'Puestos', p.puesto_id, p.nombre, 'baja');
+  return { ok: true };
+}
+
+function adminObjetivoEliminar_(r) {
+  const u = admin_(r);
+  const sh = msheet_('Objetivos');
+  const o = findBy_(sh, 'objetivo_id', r.objetivo_id)[0];
+  if (!o) throw apiError_('no_encontrado', 'Objetivo inexistente.');
+  update_(sh, o._row, { activo: false, actualizado_en: now_(), actualizado_por: u.email });
+  const shP = msheet_('Puestos');
+  findBy_(shP, 'objetivo_id', o.objetivo_id).forEach(p => {
+    if (activo_(p.activo)) update_(shP, p._row, { activo: false });
+    revocarDispositivosPuesto_(p.puesto_id);
+  });
+  auditGlobal_(u.email, 'eliminar_objetivo', 'Objetivos', o.objetivo_id, o.nombre, 'baja');
+  return { ok: true };
 }

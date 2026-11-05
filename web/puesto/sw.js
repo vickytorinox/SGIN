@@ -1,6 +1,6 @@
 // Service worker de la App Puesto: abre sin señal (app shell en caché).
 // IMPORTANTE: subir CACHE cada vez que cambie cualquier archivo de la app (sg-puesto-v2, v3...).
-const CACHE = 'sg-puesto-v1';
+const CACHE = 'sg-puesto-v2';
 const FONTS = 'sg-puesto-fonts';
 const SHELL = [
   './',

@@ -289,6 +289,7 @@ async function estructura(force) {
   return P.est;
 }
 const TIPO_LABEL = { country: 'Country / barrio', control_personal: 'Control de personal' };
+const activoV = v => v === true || v === 'TRUE' || v === 'true';
 
 VISTAS.estructura = () => {
   const box = h('div', { style: 'display:flex;flex-direction:column;gap:16px' }, h('p', { class: 'muted' }, 'Cargando…'));
@@ -304,13 +305,15 @@ VISTAS.estructura = () => {
           h('div', { class: 'row' }, c.activo === true || c.activo === 'TRUE' ? badge('Activo', 'ok') : badge('Inactivo', 'warn'),
             h('button', { class: 'btnsm', type: 'button', onclick: () => formCliente(c, recargar) }, 'Editar'),
             h('button', { class: 'btnsm', type: 'button', onclick: () => formObjetivo(c, recargar) }, '+ Objetivo'))),
-        h('div', { class: 'tree-o' }, E.objetivos.filter(o => o.cliente_id === c.cliente_id).map(o => h('div', {},
+        h('div', { class: 'tree-o' }, E.objetivos.filter(o => o.cliente_id === c.cliente_id && activoV(o.activo)).map(o => h('div', {},
           h('div', { class: 'spread' },
             h('div', {}, h('strong', {}, o.nombre), ' ', badge(TIPO_LABEL[o.tipo] || o.tipo, 'dark'), o.direccion ? h('span', { class: 'muted' }, ' · ' + o.direccion) : null),
             h('div', { class: 'row' },
               h('button', { class: 'btnsm', type: 'button', onclick: () => { P.cfgObjetivo = o.objetivo_id; go('formulario'); } }, 'Formulario'),
+              h('button', { class: 'btnsm', type: 'button', onclick: () => formEditarObjetivo(o, recargar) }, 'Editar'),
+              h('button', { class: 'btnsm red', type: 'button', onclick: () => eliminar('objetivo', o, recargar) }, 'Eliminar'),
               h('button', { class: 'btnsm', type: 'button', onclick: () => formPuesto(o, recargar) }, '+ Puesto'))),
-          h('div', { class: 'tree-p' }, E.puestos.filter(p => p.objetivo_id === o.objetivo_id).map(p => {
+          h('div', { class: 'tree-p' }, E.puestos.filter(p => p.objetivo_id === o.objetivo_id && activoV(p.activo)).map(p => {
             const devs = E.dispositivos.filter(d => d.puesto_id === p.puesto_id && d.estado !== 'revocado');
             return h('div', { class: 'spread' },
               h('div', {}, h('strong', {}, p.nombre), h('div', { class: 'row' }, devs.length ? devs.map(d => h('span', { class: 'row' },
@@ -318,7 +321,10 @@ VISTAS.estructura = () => {
                 d.ultimo_uso ? h('span', { class: 'muted' }, 'último uso ' + d.ultimo_uso) : null,
                 h('button', { class: 'btnsm red', type: 'button', onclick: async () => { if (!confirm('¿Revocar este dispositivo? Deja de funcionar al instante.')) return; await call('admin.dispositivo.revocar', { dispositivo_id: d.dispositivo_id }); toast('Dispositivo revocado'); recargar(); } }, 'Revocar')))
                 : h('span', { class: 'muted' }, 'Sin celular activado'))),
-              h('button', { class: 'btnsm', type: 'button', onclick: () => generarCodigo(p, recargar) }, 'Activar celular'));
+              h('div', { class: 'row' },
+                h('button', { class: 'btnsm', type: 'button', onclick: () => generarCodigo(p, recargar) }, 'Activar celular'),
+                h('button', { class: 'btnsm', type: 'button', onclick: () => formEditarPuesto(p, recargar) }, 'Editar'),
+                h('button', { class: 'btnsm red', type: 'button', onclick: () => eliminar('puesto', p, recargar) }, 'Eliminar')));
           }))))))));
   }).catch(e => box.replaceChildren(h('div', { class: 'banner bad' }, e.message)));
   return h('div', { style: 'display:flex;flex-direction:column;gap:16px' }, h('h1', { class: 'h title' }, 'Clientes, objetivos y puestos'), box);
@@ -346,6 +352,32 @@ function formObjetivo(c, alGuardar) {
     h('p', { class: 'muted' }, 'El tipo carga la plantilla inicial del formulario. Después se ajusta campo por campo.')],
     async () => { await call('admin.objetivo.guardar', { cliente_id: c.cliente_id, nombre: nom.value, tipo: tipo.value, direccion: dir.value }); toast('Objetivo creado'); alGuardar(); });
 }
+function formEditarObjetivo(o, alGuardar) {
+  const nom = input({ value: o.nombre }), dir = input({ value: o.direccion || '' });
+  formSimple('Editar objetivo', [campo('Nombre', nom, true), campo('Dirección', dir), h('p', { class: 'muted' }, 'El tipo de objetivo (' + (TIPO_LABEL[o.tipo] || o.tipo) + ') no se cambia: define la plantilla del formulario.')],
+    async () => { await call('admin.objetivo.guardar', { objetivo_id: o.objetivo_id, nombre: nom.value, direccion: dir.value, activo: true }); toast('Objetivo actualizado'); alGuardar(); });
+}
+function formEditarPuesto(p, alGuardar) {
+  const nom = input({ value: p.nombre });
+  formSimple('Editar puesto', [campo('Nombre del puesto', nom, true)],
+    async () => { await call('admin.puesto.guardar', { puesto_id: p.puesto_id, nombre: nom.value, activo: true }); toast('Puesto actualizado'); alGuardar(); });
+}
+function eliminar(tipo, x, alGuardar) {
+  const esObj = tipo === 'objetivo';
+  const ok = h('button', { class: 'btnred', type: 'button' }, 'Eliminar ' + tipo);
+  const err = h('div', { class: 'banner bad', hidden: true });
+  const cerrar = modal(h('h2', { class: 'sect' }, 'Eliminar ' + tipo + ' · ' + x.nombre),
+    h('p', {}, esObj ? 'El objetivo y todos sus puestos dejan de aparecer, y sus celulares dejan de funcionar al instante.' : 'El puesto deja de aparecer y sus celulares dejan de funcionar al instante.'),
+    h('p', { class: 'muted' }, 'El historial de movimientos, fichas y fotos se conserva: sigue visible en Movimientos y en la planilla del cliente.'),
+    err, h('div', { class: 'row' }, ok, h('button', { class: 'btn2', type: 'button', onclick: () => cerrar() }, 'Cancelar')));
+  ok.onclick = async () => {
+    ok.disabled = true;
+    try {
+      await call(esObj ? 'admin.objetivo.eliminar' : 'admin.puesto.eliminar', esObj ? { objetivo_id: x.objetivo_id } : { puesto_id: x.puesto_id });
+      cerrar(); toast((esObj ? 'Objetivo' : 'Puesto') + ' eliminado'); alGuardar();
+    } catch (e) { err.textContent = e.message; err.hidden = false; ok.disabled = false; }
+  };
+}
 function formPuesto(o, alGuardar) {
   const nom = input({ placeholder: 'Ej: Acceso principal' });
   formSimple('Nuevo puesto · ' + o.nombre, [campo('Nombre del puesto', nom, true)],
@@ -369,9 +401,10 @@ const LABEL_TIPO = { texto: 'Texto', numero: 'Número', lista: 'Lista', texto_la
 VISTAS.formulario = () => {
   const box = h('div', { style: 'display:flex;flex-direction:column;gap:16px' }, h('p', { class: 'muted' }, 'Cargando…'));
   estructura().then(async E => {
-    if (!E.objetivos.length) { box.replaceChildren(h('p', { class: 'muted' }, 'Primero creá un objetivo.')); return; }
-    if (!P.cfgObjetivo) P.cfgObjetivo = E.objetivos[0].objetivo_id;
-    const sel = select(E.objetivos.map(o => ({ value: o.objetivo_id, label: (E.clientes.filter(c => c.cliente_id === o.cliente_id)[0] || {}).nombre + ' › ' + o.nombre })), P.cfgObjetivo);
+    const objs = E.objetivos.filter(o => activoV(o.activo));
+    if (!objs.length) { box.replaceChildren(h('p', { class: 'muted' }, 'Primero creá un objetivo.')); return; }
+    if (!P.cfgObjetivo || !objs.some(o => o.objetivo_id === P.cfgObjetivo)) P.cfgObjetivo = objs[0].objetivo_id;
+    const sel = select(objs.map(o => ({ value: o.objetivo_id, label: (E.clientes.filter(c => c.cliente_id === o.cliente_id)[0] || {}).nombre + ' › ' + o.nombre })), P.cfgObjetivo);
     sel.onchange = () => { P.cfgObjetivo = sel.value; P.cfg = null; render(); };
     if (!P.cfg || P.cfg._id !== P.cfgObjetivo) {
       const r = await call('admin.objetivo.config', { objetivo_id: P.cfgObjetivo });
@@ -478,35 +511,70 @@ function pintarConfig(box, sel) {
 }
 
 /* ---------------- Admin: vigiladores, usuarios, auditoría ---------------- */
+/** "Cliente › Objetivo › Puesto" para mostrar asignaciones sin ambigüedad. */
+function nombreAsignacion(E, id) {
+  if (id === '*') return 'Todos los puestos';
+  const cli = cid => (E.clientes.filter(c => c.cliente_id === cid)[0] || {}).nombre || '';
+  const p = E.puestos.filter(x => x.puesto_id === id)[0];
+  if (p) { const o = E.objetivos.filter(x => x.objetivo_id === p.objetivo_id)[0] || {}; return [cli(o.cliente_id), o.nombre, p.nombre].filter(Boolean).join(' › ') + (activoV(p.activo) ? '' : ' (eliminado)'); }
+  const o = E.objetivos.filter(x => x.objetivo_id === id)[0];
+  if (o) return [cli(o.cliente_id), o.nombre].join(' › ') + ' (todos sus puestos)' + (activoV(o.activo) ? '' : ' (eliminado)');
+  return id;
+}
+
 VISTAS.guardias = () => {
   const box = h('div', {}, h('p', { class: 'muted' }, 'Cargando…'));
   const cargarG = async () => {
     const [E, r] = await Promise.all([estructura(), call('admin.guardias')]);
-    const nombrePuesto = id => { if (id === '*') return 'Todos'; const p = E.puestos.filter(x => x.puesto_id === id)[0]; const o = E.objetivos.filter(x => x.objetivo_id === id)[0]; return p ? p.nombre : (o ? o.nombre + ' (todo el objetivo)' : id); };
     box.replaceChildren(tabla([
       { label: 'CUIL', key: 'cuil' }, { label: 'Apellido', key: 'apellido' }, { label: 'Nombre', key: 'nombre' },
-      { label: 'Puestos', key: 'puestos', render: g => String(g.puestos || '').split(',').filter(Boolean).map(nombrePuesto).join(', ') },
+      { label: 'Puestos habilitados', key: 'puestos', render: g => h('div', {}, String(g.puestos || '').split(',').filter(Boolean).map(id => h('div', {}, nombreAsignacion(E, id)))) },
       { label: 'Estado', key: 'activo', render: g => badge(g.activo ? 'Activo' : 'Inactivo', g.activo ? 'ok' : 'warn') }
     ], r.guardias, g => formGuardia(g, E, cargarG)));
-    P._E = E;
   };
   cargarG().catch(e => box.replaceChildren(h('div', { class: 'banner bad' }, e.message)));
   return h('div', { style: 'display:flex;flex-direction:column;gap:16px' },
-    h('div', { class: 'spread' }, h('h1', { class: 'h title' }, 'Vigiladores'), h('button', { class: 'btn', type: 'button', onclick: async () => formGuardia(null, await estructura(), cargarG) }, '+ Nuevo vigilador')),
+    h('div', { class: 'spread' }, h('h1', { class: 'h title' }, 'Vigiladores'), h('button', { class: 'btn', type: 'button', onclick: async () => formGuardia(null, await estructura(true), cargarG) }, '+ Nuevo vigilador')),
     h('p', { class: 'muted' }, 'El CUIL es lo que el vigilador ingresa en la App Puesto. Solo puede operar en los puestos habilitados.'), box);
 };
+
 function formGuardia(g, E, alGuardar) {
   const cuil = input({ inputmode: 'numeric', value: g ? g.cuil : '', disabled: !!g }), nom = input({ value: g ? g.nombre : '' }), ape = input({ value: g ? g.apellido : '' });
-  const actuales = g ? String(g.puestos || '').split(',') : ['*'];
-  const opciones = [{ value: '*', label: 'Todos los puestos' }];
-  E.objetivos.forEach(o => {
-    opciones.push({ value: o.objetivo_id, label: o.nombre + ' (todo el objetivo)' });
-    E.puestos.filter(p => p.objetivo_id === o.objetivo_id).forEach(p => opciones.push({ value: p.puesto_id, label: '   ' + o.nombre + ' › ' + p.nombre }));
-  });
-  const ps = h('select', { class: 'in', multiple: true, size: String(Math.min(8, opciones.length)) }, opciones.map(o => h('option', { value: o.value, selected: actuales.indexOf(o.value) >= 0 }, o.label)));
+  const sel = new Set(g ? String(g.puestos || '').split(',').filter(Boolean) : []);
+  const arbol = h('div', { class: 'asig' });
+  const chk = (id, label, extra) => {
+    const c = h('input', { type: 'checkbox', checked: sel.has(id), disabled: !!extra.disabled });
+    c.addEventListener('change', () => { if (c.checked) sel.add(id); else sel.delete(id); pintar(); });
+    return h('label', { class: 'chk' + (extra.cls ? ' ' + extra.cls : '') }, c, h('span', {}, label));
+  };
+  const pintar = () => {
+    const todos = sel.has('*');
+    arbol.replaceChildren(
+      chk('*', 'Todos los puestos de todos los clientes', { cls: 'strong' }),
+      ...E.clientes.filter(c => activoV(c.activo)).map(c => {
+        const objs = E.objetivos.filter(o => o.cliente_id === c.cliente_id && activoV(o.activo));
+        if (!objs.length) return null;
+        return h('div', { class: 'asig-c' }, h('div', { class: 'asig-t' }, c.nombre),
+          ...objs.map(o => {
+            const todoObj = sel.has(o.objetivo_id);
+            const ps = E.puestos.filter(p => p.objetivo_id === o.objetivo_id && activoV(p.activo));
+            return h('div', { class: 'asig-o' },
+              chk(o.objetivo_id, o.nombre + ' · todos sus puestos', { cls: 'strong', disabled: todos }),
+              h('div', { class: 'asig-p' }, ps.length ? ps.map(p => chk(p.puesto_id, p.nombre, { disabled: todos || todoObj })) : h('span', { class: 'muted' }, 'Sin puestos')));
+          }));
+      }).filter(Boolean));
+  };
+  pintar();
   const act = select([{ value: '1', label: 'Activo' }, { value: '0', label: 'Inactivo' }], g && !g.activo ? '0' : '1');
-  formSimple(g ? 'Editar vigilador' : 'Nuevo vigilador', [campo('CUIL (11 dígitos)', cuil, true), h('div', { class: 'grid-f' }, campo('Nombre', nom, true), campo('Apellido', ape, true)), campo('Puestos habilitados (Ctrl/Cmd para varios)', ps), campo('Estado', act)],
-    async () => { await call('admin.guardia.guardar', { cuil: cuil.value, nombre: nom.value, apellido: ape.value, puestos: Array.from(ps.selectedOptions).map(o => o.value).join(','), activo: act.value === '1' }); toast('Vigilador guardado'); alGuardar(); });
+  formSimple(g ? 'Editar vigilador' : 'Nuevo vigilador', [campo('CUIL (11 dígitos)', cuil, true), h('div', { class: 'grid-f' }, campo('Nombre', nom, true), campo('Apellido', ape, true)),
+    h('div', { class: 'field' }, h('span', { class: 'lbl' }, 'Dónde puede trabajar'), arbol), campo('Estado', act)],
+    async () => {
+      let lista = Array.from(sel);
+      if (lista.indexOf('*') >= 0) lista = ['*'];
+      if (!lista.length) throw new Error('Elegí al menos un puesto u objetivo.');
+      await call('admin.guardia.guardar', { cuil: cuil.value, nombre: nom.value, apellido: ape.value, puestos: lista.join(','), activo: act.value === '1' });
+      toast('Vigilador guardado'); alGuardar();
+    });
 }
 
 VISTAS.usuarios = () => {

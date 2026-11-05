@@ -86,6 +86,34 @@ r=P('admin.objetivo.config',{sesion:sAd,objetivo_id:otros.objetivos[0].objetivo_
   const m3 = r2.data.config.categorias.find(c=>c.key==='mercaderia');
   ok(!m3.campos.some(f=>f.key==='x_temp') && m3.campos.some(f=>f.key==='foto_remito'),'config: extra eliminado; campo de plantilla no se puede borrar');
 }
+
+// reingreso sin salida, prohibir desde el puesto, eliminar puesto
+{
+  const tB2 = P('puesto.activar',{codigo:P('admin.dispositivo.codigo',{sesion:sAd,puesto_id:P('admin.estructura',{sesion:sAd}).data.puestos.find(p=>p.nombre==='Acceso principal').puesto_id}).data.codigo}).data.token;
+  const base = {categoria:'visita',sentido:'INGRESO',persona:{nro_doc:'33222111',nombre:'Rita',apellido:'Mora'},campos:{},autoriza:{tipo:'Residente',lote:'9',apellido:'Paz'}};
+  P('puesto.registrar',{token:tB2,cuil:'20123456789',mov:Object.assign({reg_id:'reg-re-0001',cargado_en:new Date(Date.now()-3600e3).toISOString()},base)});
+  let rr = P('puesto.registrar',{token:tB2,cuil:'20123456789',mov:Object.assign({reg_id:'reg-re-0002',cargado_en:new Date().toISOString()},base)});
+  ok(rr.ok && rr.data.alertas.indexOf('reingreso_sin_salida')>=0,'reingreso sin salida: se detecta');
+  const ad = P('puesto.adentro',{token:tB2,cuil:'20123456789'}).data.adentro.filter(x=>x.dni==='33222111');
+  ok(ad.length===1 && ad[0].reg_id==='reg-re-0002' && ad[0].lote==='9','adentro: una sola fila, la más nueva, con DNI y lote');
+  const mv = P('panel.movimientos',{sesion:sA,cliente_id:cB,dni:'33222111'}).data.rows;
+  ok(mv.some(x=>/No registrada/.test(x.salida)),'panel: el ingreso anterior figura con salida no registrada');
+  rr = P('puesto.prohibir',{token:tB2,cuil:'20123456789',prohibicion:{reg_id:'reg-pr-0001',nro_doc:'33222111',ordenado_tipo:'Residente',ordenado_nombre:'Ana Paz',medio:'WhatsApp',motivo:'x'}});
+  ok(!rr.ok && rr.error==='orden_invalida','prohibir desde puesto: residente exige lote');
+  const mails0 = env.mails.length;
+  rr = P('puesto.prohibir',{token:tB2,cuil:'20123456789',prohibicion:{reg_id:'reg-pr-0002',nro_doc:'33222111',ordenado_tipo:'Residente',ordenado_nombre:'Ana Paz',ordenado_lote:'9',medio:'WhatsApp',motivo:'No volver a dejar entrar'}});
+  ok(rr.ok && env.mails.length===mails0+1,'prohibir desde puesto + aviso por mail');
+  rr = P('puesto.buscar',{token:tB2,cuil:'20123456789',q:'33222111'}); ok(rr.data.persona.estado==='PROHIBIDO' && rr.data.persona.prohibicion.ordenado_lote==='9','persona queda PROHIBIDA con quién lo ordenó');
+  rr = P('puesto.sync',{token:tB2,cuil:'20123456789'}); ok(rr.data.prohibidos.docs.length===1,'lista de prohibidos del puesto actualizada');
+  // vigilador dado de baja deja de entrar aunque haya caché
+  P('admin.guardia.guardar',{sesion:sAd,cuil:'20123456789',nombre:'Martín',apellido:'López',puestos:'*',activo:false});
+  rr = P('puesto.sync',{token:tB2,cuil:'20123456789'}); ok(!rr.ok && rr.error==='cuil_invalido','vigilador inactivo rechazado al instante');
+  P('admin.guardia.guardar',{sesion:sAd,cuil:'20123456789',nombre:'Martín',apellido:'López',puestos:'*',activo:true});
+  const pid = P('admin.estructura',{sesion:sAd}).data.puestos.find(p=>p.nombre==='Acceso principal').puesto_id;
+  rr = P('admin.puesto.eliminar',{sesion:sAd,puesto_id:pid}); ok(rr.ok,'eliminar puesto');
+  rr = P('puesto.sync',{token:tB2,cuil:'20123456789'}); ok(!rr.ok && rr.error==='dispositivo_invalido','celular del puesto eliminado deja de funcionar');
+  rr = P('panel.movimientos',{sesion:sA,cliente_id:cB,dni:'33222111'}); ok(rr.ok && rr.data.rows.length===2,'el historial se conserva tras eliminar el puesto');
+}
 // revocar
 const est=P('admin.estructura',{sesion:sAd}).data; const dev=est.dispositivos.find(d=>d.estado==='activo');
 r=P('admin.dispositivo.revocar',{sesion:sAd,dispositivo_id:dev.dispositivo_id}); ok(r.ok,'revocar dispositivo');

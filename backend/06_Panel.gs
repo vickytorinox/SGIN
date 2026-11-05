@@ -69,7 +69,8 @@ function panelMovimientos_(r) {
       apellido: m.apellido, nombre: m.nombre, dni: String(m.nro_doc || ''), cuil: String(m.guardia_cuil || ''),
       vigilador: mp.guardias[digits_(m.guardia_cuil)] || '', observaciones: m.observaciones,
       autoriza: [m.autoriza_tipo, m.autoriza_lote ? (obj.config.etiquetas.lote || 'Lote') + ' ' + m.autoriza_lote : '', m.autoriza_apellido || m.autoriza_nombre].filter(Boolean).join(' · '),
-      motivo: m.motivo, patente: m.patente, salida: m.salida_en ? fecha_(m.salida_en, 'dd/MM HH:mm') : '',
+      motivo: m.motivo, patente: m.patente,
+      salida: m.salida_guardia === 'AUTO' ? 'No registrada (cerrada al reingresar ' + fecha_(m.salida_en, 'dd/MM HH:mm') + ')' : (m.salida_en ? fecha_(m.salida_en, 'dd/MM HH:mm') : ''),
       cacheo: m.cacheo_resultado, foto_cacheo: m.cacheo_foto_id || '', fotos: fotos,
       excepcional: exc ? (exc.autoriza_tipo + ' ' + [exc.nombre, exc.apellido].filter(Boolean).join(' ') + (exc.lote ? ' lote ' + exc.lote : '') + ' · ' + exc.medio + (exc.motivo ? ' · ' + exc.motivo : '')) : '',
       alertas: String(m.alertas || '')
@@ -93,6 +94,7 @@ function panelAdentro_(r) {
     .filter(m => m.sentido === 'INGRESO' && !m.salida_en && m.persona_id && (!r.objetivo_id || m.objetivo_id === r.objetivo_id) && new Date(m.cargado_en).getTime() > desde)
     .filter(m => { const o = mp.objetivos[m.objetivo_id]; return o && o.config.modo_salida === 'cerrar'; })
     .sort((a, b) => new Date(b.cargado_en) - new Date(a.cargado_en))
+    .filter((m, i, arr) => arr.findIndex(x => x.persona_id === m.persona_id && x.objetivo_id === m.objetivo_id) === i)
     .map(m => {
       const o = mp.objetivos[m.objetivo_id];
       const cat = o.config.categorias.filter(x => x.key === m.categoria)[0];
@@ -150,7 +152,7 @@ function panelPersona_(r) {
     medio: h.medio, motivo: h.motivo, por: h.ejecutado_por
   }));
   det.movimientos = findBy_(sheet_(ss, 'Movimientos', CLIENTE_SCHEMA), 'persona_id', p.persona_id).slice(-30).reverse().map(m => ({
-    fecha: fecha_(m.cargado_en), tipo: m.sentido, salida: m.salida_en ? fecha_(m.salida_en, 'dd/MM HH:mm') : '', autoriza: [m.autoriza_tipo, m.autoriza_lote].filter(Boolean).join(' ')
+    fecha: fecha_(m.cargado_en), tipo: m.sentido, salida: m.salida_guardia === 'AUTO' ? 'No registrada' : (m.salida_en ? fecha_(m.salida_en, 'dd/MM HH:mm') : ''), autoriza: [m.autoriza_tipo, m.autoriza_lote].filter(Boolean).join(' ')
   }));
   return { persona: det };
 }

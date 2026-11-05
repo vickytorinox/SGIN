@@ -51,6 +51,37 @@ async function posicion() {
   return Promise.race([S.pos, new Promise(r => setTimeout(() => r({}), 1500))]);
 }
 
+/* ---------------- caché local de fichas (búsqueda instantánea) ----------------
+ * Guarda las fichas consultadas o cargadas en este celular (máx. 800, 30 días).
+ * Al buscar, si la ficha está en caché se abre al instante y se actualiza desde el servidor en segundo plano.
+ */
+const FICHAS_MAX = 800, FICHAS_DIAS = 30;
+async function fichas() {
+  const f = (await kv.get('fichas')) || {};
+  const lim = Date.now() - FICHAS_DIAS * 86400000;
+  Object.keys(f).forEach(k => { if (!f[k] || f[k]._ts < lim) delete f[k]; });
+  return f;
+}
+async function guardarFicha(p) {
+  if (!p || !p.nro_doc) return;
+  const f = await fichas();
+  f[digits(p.nro_doc)] = Object.assign({}, p, { _ts: Date.now() });
+  const keys = Object.keys(f);
+  if (keys.length > FICHAS_MAX) keys.sort((a, b) => f[a]._ts - f[b]._ts).slice(0, keys.length - FICHAS_MAX).forEach(k => delete f[k]);
+  await kv.set('fichas', f);
+}
+async function buscarLocal(q) {
+  const f = await fichas();
+  const d = /^[\d.\s-]+$/.test(q) ? digits(q) : '';
+  if (d) return f[d] ? [f[d]] : [];
+  const pat = patente(q);
+  const porPat = Object.values(f).filter(p => (p.patentes || []).indexOf(pat) >= 0);
+  if (pat.length >= 6 && porPat.length) return porPat;
+  const norm = x => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const words = norm(q).split(/\s+/).filter(Boolean);
+  return Object.values(f).filter(p => { const n = norm(p.nombre + ' ' + p.apellido); return words.every(w => n.indexOf(w) >= 0); });
+}
+
 /* ---------------- sesión del guardia (10 min, persiste al recargar) ---------------- */
 function getSesion() { try { return JSON.parse(localStorage.getItem('sg_sesion') || 'null'); } catch (e) { return null; } }
 function setSesion(s) { if (s) localStorage.setItem('sg_sesion', JSON.stringify(s)); else localStorage.removeItem('sg_sesion'); }
@@ -79,7 +110,7 @@ function render() {
 function header() {
   const s = getSesion();
   const b = S.bundle || {};
-  const titulos = { home: esCountry() ? 'Nuevo ingreso' : 'Control de personal', form: S.F ? (catActual() || {}).label || 'Carga' : 'Carga', prohibido: 'Alerta', excepcion: 'Ingreso excepcional', ok: 'Listo', adentro: 'Adentro ahora', pendientes: 'Pendientes de envío', elegir: 'Resultados' };
+  const titulos = { home: esCountry() ? 'Nuevo ingreso' : 'Control de personal', form: S.F ? (catActual() || {}).label || 'Carga' : 'Carga', prohibido: 'Alerta', excepcion: 'Ingreso excepcional', ok: 'Listo', adentro: 'Adentro ahora', pendientes: 'Pendientes de envío', elegir: 'Resultados', prohibir: 'Registrar prohibición' };
   return h('header', { class: 'top' },
     h('div', { class: 'toprow' },
       S.screen !== 'home' ? h('button', { class: 'iconbtn', type: 'button', 'aria-label': 'Volver', onclick: () => go('home') }, icon('back', 22)) : null,
@@ -131,6 +162,8 @@ async function sync() {
       try {
         if (it.tipo === 'registrar') {
           await api('puesto.registrar', { token: S.token, cuil: it.cuil, mov: await serializar(it.mov) }, 90000);
+        } else if (it.tipo === 'prohibir') {
+          await api('puesto.prohibir', { token: S.token, cuil: it.cuil, prohibicion: await serializar(it.prohibicion) }, 60000);
         } else if (it.tipo === 'salida') {
           await api('puesto.salida', { token: S.token, cuil: it.cuil, ref_reg_id: it.ref_reg_id, salida_en: it.salida_en });
         }
@@ -158,6 +191,12 @@ async function refrescar() {
     const b = await api('puesto.sync', { token: S.token, cuil: s.cuil });
     S.bundle = b;
     await kv.set('bundle', b);
+    if (esCountry()) {
+      // lista "Adentro ahora" al día para avisar reingresos aunque no se abra esa pantalla
+      const r = await api('puesto.adentro', { token: S.token, cuil: s.cuil });
+      const pendientes = ((await kv.get('adentro')) || []).filter(x => /pendiente/.test(x.detalle || ''));
+      await kv.set('adentro', pendientes.concat(r.adentro));
+    }
   } catch (e) {
     if (e.code === 'dispositivo_invalido') desactivado(e.message);
   }
@@ -247,6 +286,21 @@ SCREENS.login = () => {
 /* ---------------- home ---------------- */
 SCREENS.home = () => (esCountry() ? homeCountry() : homeRegistro());
 
+/** Actualiza en segundo plano la ficha abierta desde la caché. Si resultó prohibida, salta la alerta. */
+async function refrescarFicha(nro) {
+  if (!online()) return;
+  try {
+    const r = await api('puesto.buscar', { token: S.token, cuil: getSesion().cuil, q: nro });
+    if (!r.persona) return;
+    guardarFicha(r.persona);
+    if (!S.F || digits(S.F.persona.nro_doc) !== digits(nro)) return;
+    if (r.persona.estado === 'PROHIBIDO' && !S.F.excepcional) return go('prohibido', { persona: r.persona });
+    S.F.ficha = r.persona;
+    S.F.desdeCache = false;
+    if (S.screen === 'form') render();
+  } catch (e) { /* se queda con la ficha de la caché */ }
+}
+
 function homeCountry() {
   const inp = h('input', { class: 'in xl', placeholder: 'DNI, nombre o patente', autocomplete: 'off', enterkeyhint: 'search' });
   const err = h('div', { class: 'banner bad', hidden: true });
@@ -257,10 +311,21 @@ function homeCountry() {
     btn.disabled = true; btn.textContent = 'Buscando…'; err.hidden = true;
     const dni = /^[\d.\s-]+$/.test(q) ? digits(q) : '';
     const pat = dni ? '' : patente(q);
+    if (await esProhibidoLocal(dni, pat)) {
+      // Prohibido según la lista del celular: alerta inmediata; si hay señal se traen los detalles.
+      if (!online()) return go('prohibido', { offline: true, dni: dni, patente: pat });
+    }
+    const locales = await buscarLocal(q);
+    if (locales.length === 1 && locales[0].estado !== 'PROHIBIDO' && !(await esProhibidoLocal(locales[0].nro_doc, ''))) {
+      abrirForm({ persona: locales[0], desdeCache: true });
+      refrescarFicha(locales[0].nro_doc);
+      return;
+    }
     try {
       if (!online()) throw Object.assign(new Error(''), { code: 'red' });
       const r = await api('puesto.buscar', { token: S.token, cuil: getSesion().cuil, q: q });
       if (r.persona) {
+        guardarFicha(r.persona);
         if (r.persona.estado === 'PROHIBIDO') return go('prohibido', { persona: r.persona });
         return abrirForm({ persona: r.persona });
       }
@@ -332,6 +397,7 @@ function abrirForm(o) {
     sentido: esCountry() ? 'INGRESO' : S.sentido,
     ficha: p,
     sinConexion: !!o.sinConexion,
+    desdeCache: !!o.desdeCache,
     persona: { tipo_doc: (p && p.tipo_doc) || 'DNI', nro_doc: p ? p.nro_doc : (o.dni || ''), nombre: p ? p.nombre : '', apellido: p ? p.apellido : '', estado: p ? p.estado : '' },
     campos: { patente: o.patente || ult.patente || (p && p.patentes && p.patentes[0]) || '', subtipo: (p && p.subtipo) || '', empresa: (p && p.empresa) || '', telefono: (p && p.telefono) || '', motivo: ult.motivo || '' },
     fotos: {},
@@ -346,6 +412,12 @@ function abrirForm(o) {
   const cac = cfg().modulos.cacheo || {};
   if (cac.activo && cac.aleatorio_cada > 0) {
     kv.get('contador_cacheo').then(n => { n = (n || 0) + 1; S.F && (S.F._contador = n); S.F && (S.F.aleatorio = n % cac.aleatorio_cada === 0); if (S.screen === 'form') render(); });
+  }
+  if (p && esCountry()) {
+    kv.get('adentro').then(l => {
+      const x = (l || []).filter(a => a.dni && digits(a.dni) === digits(p.nro_doc))[0];
+      if (x && S.F && S.F.ficha === p) { S.F._adentro = x; if (S.screen === 'form') render(); }
+    });
   }
   pedirPosicion();
   go('form');
@@ -439,12 +511,15 @@ SCREENS.form = () => {
 
   // Ficha existente
   if (F.ficha) {
-    partes.push(h('div', { class: 'card row' },
-      h('div', { class: 'avatar h' }, ((F.ficha.nombre || ' ')[0] + (F.ficha.apellido || ' ')[0]).toUpperCase()),
-      h('div', { class: 'grow' },
-        h('div', { class: 'h name' }, F.ficha.nombre + ' ' + F.ficha.apellido),
-        h('p', { class: 'muted' }, (F.ficha.tipo_doc || 'DNI') + ' ' + F.ficha.nro_doc + (F.ficha.ultimo ? ' · último ingreso ' + F.ficha.ultimo.fecha : '')),
-        badge(F.ficha.estado || 'NUEVO', F.ficha.estado === 'EVENTUAL' ? 'warn' : 'ok'))));
+    partes.push(h('div', { class: 'card' },
+      h('div', { class: 'row' },
+        h('div', { class: 'avatar h' }, ((F.ficha.nombre || ' ')[0] + (F.ficha.apellido || ' ')[0]).toUpperCase()),
+        h('div', { class: 'grow' },
+          h('div', { class: 'h name' }, F.ficha.nombre + ' ' + F.ficha.apellido),
+          h('p', { class: 'muted' }, (F.ficha.tipo_doc || 'DNI') + ' ' + F.ficha.nro_doc + (F.ficha.ultimo ? ' · último ingreso ' + F.ficha.ultimo.fecha : '') + (F.desdeCache ? ' · actualizando…' : '')),
+          badge(F.ficha.estado || 'NUEVO', F.ficha.estado === 'EVENTUAL' ? 'warn' : 'ok'))),
+      !F.excepcional ? h('button', { type: 'button', class: 'linkred', onclick: () => go('prohibir', { persona: F.ficha }) }, 'Registrar una prohibición para esta persona') : null));
+    if (F._adentro) partes.push(h('div', { class: 'banner warn' }, 'Figura adentro desde ' + F._adentro.hora + ' sin salida registrada. Si registrás este ingreso, el anterior se cierra como "salida no registrada".'));
   } else if (esCountry()) {
     partes.push(h('div', { class: 'banner warn' }, 'Persona nueva. Completá toda la ficha ahora: queda guardada para los próximos ingresos.'));
   }
@@ -620,6 +695,25 @@ async function enviar(btn) {
   await cola.put({ id: reg_id, tipo: 'registrar', creado: Date.now(), cuil: getSesion().cuil, intentos: 0, error: '', resumen: { nombre: nombre, det: det, sentido: F.sentido }, mov: mov });
   if (F._contador) kv.set('contador_cacheo', F._contador);
 
+  if (cat.persona) {
+    const prev = F.ficha || {};
+    guardarFicha(Object.assign({}, prev, {
+      persona_id: prev.persona_id || '', tipo_doc: mov.persona.tipo_doc, nro_doc: mov.persona.nro_doc, nombre: mov.persona.nombre, apellido: mov.persona.apellido,
+      categoria: cat.key, estado: prev.estado || mov.persona.estado || cat.estado_default, subtipo: F.campos.subtipo || prev.subtipo || '', empresa: F.campos.empresa || prev.empresa || '',
+      telefono: F.campos.telefono || prev.telefono || '',
+      patentes: Array.from(new Set((prev.patentes || []).concat(F.campos.patente ? [patente(F.campos.patente)] : []))),
+      docs: (prev.docs || []).filter(d => !docs.some(n => n.tipo === d.tipo)).concat(docs.map(n => ({ tipo: n.tipo, estado: n.medio === 'whatsapp' ? 'whatsapp' : 'incorporado', vencimiento: '', archivo: true }))),
+      ultimo: { fecha: new Date().toLocaleString('es-AR'), autoriza_tipo: mov.autoriza ? mov.autoriza.tipo : '', autoriza_lote: mov.autoriza ? mov.autoriza.lote : '', autoriza_apellido: mov.autoriza ? mov.autoriza.apellido : '', autoriza_nombre: mov.autoriza ? mov.autoriza.nombre : '', motivo: F.campos.motivo || '', patente: F.campos.patente || '' }
+    }));
+  }
+  if (esCountry() && cat.persona && F.sentido === 'INGRESO') {
+    // si figuraba adentro, se saca de la lista local (el servidor cierra el ingreso anterior)
+    const ad = ((await kv.get('adentro')) || []).filter(a => !(a.dni && digits(a.dni) === digits(mov.persona.nro_doc)));
+    ad.unshift({ reg_id: reg_id, nombre: mov.persona.apellido + ', ' + mov.persona.nombre, dni: mov.persona.nro_doc, patente: F.campos.patente || '', lote: mov.autoriza ? mov.autoriza.lote : '',
+      detalle: cat.label + (mov.autoriza && mov.autoriza.lote ? ' · ' + (C.etiquetas.lote || 'Lote') + ' ' + mov.autoriza.lote : (mov.autoriza && mov.autoriza.tipo ? ' · ' + mov.autoriza.tipo : '')),
+      hora: new Date().toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) });
+    await kv.set('adentro', ad.slice(0, 1000));
+  }
   const rec = (await kv.get('recientes')) || [];
   rec.unshift({ sentido: F.sentido, nombre: nombre, det: det, hora: horaCorta(), reg_id: reg_id, adentro: esCountry() && cat.persona });
   await kv.set('recientes', rec.slice(0, 30));
@@ -695,8 +789,37 @@ SCREENS.ok = () => h('main', { class: 'okscreen' },
 
 SCREENS.adentro = () => {
   const cont = h('div', { class: 'content' }, h('p', { class: 'muted' }, 'Cargando…'));
+  const q = h('input', { class: 'in big', placeholder: 'Buscar por nombre, DNI, patente o lote', autocomplete: 'off', enterkeyhint: 'search' });
+  const lista$ = h('div', { style: 'display:flex;flex-direction:column;gap:10px' });
+  const contador = h('p', { class: 'muted' });
+  let lista = [];
+  const norm = x => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const pintar = () => {
+    const words = norm(q.value).split(/\s+/).filter(Boolean);
+    const qd = digits(q.value);
+    const vis = lista.filter(x => {
+      if (!words.length) return true;
+      const t = norm([x.nombre, x.detalle, x.patente, x.lote ? 'lote ' + x.lote : ''].join(' '));
+      return words.every(w => t.indexOf(w) >= 0) || (qd.length >= 3 && digits(x.dni).indexOf(qd) >= 0);
+    });
+    contador.textContent = (words.length ? vis.length + ' de ' : '') + lista.length + (lista.length === 1 ? ' persona sin salida registrada' : ' personas sin salida registrada');
+    lista$.replaceChildren(...vis.slice(0, 150).map(x => h('div', { class: 'card row' },
+      h('div', { class: 'grow' }, h('div', { class: 'strong' }, x.nombre), h('div', { class: 'muted' }, [x.dni ? 'DNI ' + x.dni : '', x.detalle].filter(Boolean).join(' · ')), h('div', { class: 'muted small' }, 'Entró ' + x.hora)),
+      h('button', { class: 'btnsm', type: 'button', onclick: async ev => {
+        ev.currentTarget.disabled = true;
+        await cola.put({ id: 'salida-' + x.reg_id, tipo: 'salida', creado: Date.now(), cuil: getSesion().cuil, ref_reg_id: x.reg_id, salida_en: new Date().toISOString(), resumen: { nombre: x.nombre, det: 'Salida', sentido: 'SALIDA' } });
+        await kv.set('adentro', ((await kv.get('adentro')) || []).filter(y => y.reg_id !== x.reg_id));
+        lista = lista.filter(y => y.reg_id !== x.reg_id);
+        toast('Salida registrada: ' + x.nombre);
+        sync();
+        pintar();
+        q.select();
+      } }, 'Salida'))));
+    if (vis.length > 150) lista$.append(h('p', { class: 'muted' }, 'Hay ' + (vis.length - 150) + ' más: escribí para filtrar.'));
+  };
+  q.addEventListener('input', pintar);
   (async () => {
-    let lista = (await kv.get('adentro')) || [];
+    lista = (await kv.get('adentro')) || [];
     let aviso = '';
     if (online()) {
       try {
@@ -709,24 +832,56 @@ SCREENS.adentro = () => {
     const salidas = items.filter(i => i.tipo === 'salida').map(i => i.ref_reg_id);
     const yaEnLista = lista.map(x => x.reg_id);
     items.filter(i => i.tipo === 'registrar' && i.mov.sentido === 'INGRESO' && i.mov.persona && yaEnLista.indexOf(i.id) < 0)
-      .forEach(i => lista.unshift({ reg_id: i.id, nombre: i.resumen.nombre, detalle: i.resumen.det + ' · pendiente de envío', hora: new Date(i.creado).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }));
-    lista = lista.filter(x => salidas.indexOf(x.reg_id) < 0);
-    cont.replaceChildren(
-      aviso ? h('div', { class: 'banner warn' }, aviso) : null,
-      h('p', { class: 'muted' }, lista.length + (lista.length === 1 ? ' persona sin salida registrada' : ' personas sin salida registrada')),
-      ...lista.map(x => h('div', { class: 'card row' },
-        h('div', { class: 'grow' }, h('div', { class: 'strong' }, x.nombre), h('div', { class: 'muted' }, x.detalle), h('div', { class: 'muted small' }, 'Entró ' + x.hora)),
-        h('button', { class: 'btnsm', type: 'button', onclick: async ev => {
-          ev.currentTarget.disabled = true;
-          await cola.put({ id: 'salida-' + x.reg_id, tipo: 'salida', creado: Date.now(), cuil: getSesion().cuil, ref_reg_id: x.reg_id, salida_en: new Date().toISOString(), resumen: { nombre: x.nombre, det: 'Salida', sentido: 'SALIDA' } });
-          const guardada = ((await kv.get('adentro')) || []).filter(y => y.reg_id !== x.reg_id);
-          await kv.set('adentro', guardada);
-          toast('Salida registrada: ' + x.nombre);
-          sync();
-          render();
-        } }, 'Salida'))));
+      .forEach(i => lista.unshift({ reg_id: i.id, nombre: i.resumen.nombre, dni: i.mov.persona.nro_doc, patente: (i.mov.campos || {}).patente || '', lote: (i.mov.autoriza || {}).lote || '', detalle: i.resumen.det + ' · pendiente de envío', hora: new Date(i.creado).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }));
+    const vistos = {};
+    lista = lista.filter(x => salidas.indexOf(x.reg_id) < 0).filter(x => { const k = x.dni ? digits(x.dni) : x.reg_id; if (vistos[k]) return false; vistos[k] = 1; return true; });
+    cont.replaceChildren(...[aviso ? h('div', { class: 'banner warn' }, aviso) : null, labeled('Buscar', q), contador, lista$].filter(Boolean));
+    pintar();
+    setTimeout(() => q.focus(), 50);
   })();
   return h('main', {}, cont);
+};
+
+/* ---------------- prohibición registrada desde el puesto ---------------- */
+SCREENS.prohibir = () => {
+  const p = S.ctx.persona;
+  const C = cfg();
+  const tipos = C.autoriza && C.autoriza.length ? C.autoriza : ['Encargado del local', 'Supervisor Spartan'];
+  const E = S.ctx.E || (S.ctx.E = { ordenado_tipo: tipos[0], ordenado_nombre: '', ordenado_lote: '', medio: 'WhatsApp', motivo: '', constancia: null });
+  const err = h('div', { class: 'banner bad', hidden: true });
+  const nom = h('input', { class: 'in', value: E.ordenado_nombre }); nom.addEventListener('input', () => { E.ordenado_nombre = nom.value; });
+  const lote = h('input', { class: 'in', inputmode: 'numeric', value: E.ordenado_lote }); lote.addEventListener('input', () => { E.ordenado_lote = lote.value; });
+  const mot = h('textarea', { class: 'in', rows: '3', placeholder: 'Ej: el residente pidió que no vuelva a ingresar' }); mot.value = E.motivo;
+  mot.addEventListener('input', () => { E.motivo = mot.value; });
+  const confirmar = async () => {
+    if (!E.ordenado_nombre.trim() || (E.ordenado_tipo === 'Residente' && !E.ordenado_lote.trim())) { err.textContent = 'Indicá quién lo ordena' + (E.ordenado_tipo === 'Residente' ? ' y su lote.' : '.'); err.hidden = false; return; }
+    if (!E.motivo.trim()) { err.textContent = 'Indicá el motivo.'; err.hidden = false; return; }
+    const id = nuevoId();
+    await cola.put({ id: id, tipo: 'prohibir', creado: Date.now(), cuil: getSesion().cuil, resumen: { nombre: p.apellido + ', ' + p.nombre, det: 'Prohibición', sentido: 'PROHIBIR' },
+      prohibicion: Object.assign({ reg_id: id, nro_doc: digits(p.nro_doc), cargado_en: new Date().toISOString() }, E) });
+    // efecto inmediato en este celular
+    if (S.bundle && S.bundle.prohibidos) {
+      S.bundle.prohibidos.docs.push(await sha(S.bundle.salt + '|' + digits(p.nro_doc)));
+      await kv.set('bundle', S.bundle);
+    }
+    await guardarFicha(Object.assign({}, p, { estado: 'PROHIBIDO' }));
+    S.F = null;
+    toast('Prohibición registrada. Se avisa a la administración.');
+    sync();
+    go('home');
+  };
+  return h('main', { class: 'form' }, h('div', { class: 'content' },
+    h('div', { class: 'banner bad' }, 'Vas a PROHIBIR el ingreso de ' + p.nombre + ' ' + p.apellido + ' (DNI ' + p.nro_doc + '). Solo hacelo si te lo ordenó alguien autorizado. Para levantarla hay que pedirlo a la administración.'),
+    h('div', { class: 'card' }, h('h2', { class: 'sect' }, 'Quién lo ordena'),
+      chips(tipos, E.ordenado_tipo, v => { E.ordenado_tipo = v; render(); }),
+      E.ordenado_tipo === 'Residente'
+        ? h('div', { class: 'row2' }, labeled('Nombre y apellido', nom, true), labeled(C.etiquetas.lote || 'Lote', lote, true))
+        : labeled('Nombre de quien lo ordena', nom, true),
+      h('div', { class: 'field' }, h('span', { class: 'lbl' }, 'Medio'), chips(['WhatsApp', 'Llamada', 'Presencial'], E.medio, v => { E.medio = v; render(); })),
+      labeled('Motivo', mot, true),
+      h('div', { class: 'field' }, h('span', { class: 'lbl' }, 'Constancia (captura o foto, recomendado)'), fotoBoton('Subir captura de la orden', !!E.constancia, blob => { E.constancia = blob; render(); }, { capture: false }))),
+    err),
+    h('div', { class: 'foot' }, h('button', { class: 'btnred', type: 'button', onclick: confirmar }, 'Confirmar prohibición')));
 };
 
 SCREENS.pendientes = () => {
@@ -738,7 +893,7 @@ SCREENS.pendientes = () => {
         h('div', { class: 'strong' }, (i.resumen && i.resumen.nombre) || i.tipo),
         h('div', { class: 'muted small' }, ((i.resumen && i.resumen.det) || '') + ' · ' + new Date(i.creado).toLocaleString('es-AR')),
         i.error ? h('div', { class: 'banner warn' }, 'Último intento: ' + i.error) : null)),
-      items.length ? h('button', { class: 'btn', type: 'button', onclick: async () => { await sync(); render(); } }, online() ? 'Reintentar ahora' : 'Sin conexión') : null);
+      ...(items.length ? [h('button', { class: 'btn', type: 'button', onclick: async () => { await sync(); render(); } }, online() ? 'Reintentar ahora' : 'Sin conexión')] : []));
   });
   return h('main', {}, cont);
 };

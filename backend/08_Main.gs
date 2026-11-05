@@ -12,6 +12,7 @@ const ROUTES = {
   'puesto.registrar': r => puestoRegistrar_(r),
   'puesto.salida': r => puestoSalida_(r),
   'puesto.adentro': r => puestoAdentro_(r),
+  'puesto.prohibir': r => puestoProhibir_(r),
 
   // Panel Cliente (sesión Google)
   'panel.login': r => loginGoogle_(r.idToken),
@@ -30,6 +31,8 @@ const ROUTES = {
   'admin.objetivo.guardar': r => adminObjetivoGuardar_(r),
   'admin.objetivo.config': r => adminObjetivoConfig_(r),
   'admin.puesto.guardar': r => adminPuestoGuardar_(r),
+  'admin.puesto.eliminar': r => adminPuestoEliminar_(r),
+  'admin.objetivo.eliminar': r => adminObjetivoEliminar_(r),
   'admin.dispositivo.codigo': r => adminDispositivoCodigo_(r),
   'admin.dispositivo.revocar': r => adminDispositivoRevocar_(r),
   'admin.guardias': r => adminGuardias_(r),

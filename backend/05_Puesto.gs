@@ -289,12 +289,17 @@ function puestoRegistrar_(r) {
       cacheo_aleatorio: cacheoAle, excepcional: exc, alertas: alertas.join(','), lat: num_(m.lat), lng: num_(m.lng),
       cargado_en: fecha, recibido_en: recibido, guardia_cuil: g.cuil, salida_en: '', salida_guardia: ''
     };
+    if (cfg.modo_salida === 'cerrar' && sentido === 'INGRESO' && persona) {
+      if (cerrarAbiertos_(shM, persona.persona_id, ctx.objetivo.objetivo_id, fecha)) alertas.push('reingreso_sin_salida');
+      row.alertas = alertas.join(',');
+    }
     append_(shM, row);
 
     acomp.forEach((ac, i) => {
       const nro = digits_(ac.nro_doc);
       if (nro.length < 6) return;
       const pa = upsertPersona_(ss, cat, { tipo_doc: 'DNI', nro_doc: nro, nombre: txt_(ac.nombre, 80) || '-', apellido: txt_(ac.apellido, 80) || '-' }, g.cuil);
+      if (cfg.modo_salida === 'cerrar' && sentido === 'INGRESO') cerrarAbiertos_(shM, pa.persona_id, ctx.objetivo.objetivo_id, fecha);
       append_(shM, Object.assign({}, row, {
         mov_id: uid_(), reg_id: reg_id + '-a' + (i + 1), persona_id: pa.persona_id, nro_doc: String(pa.nro_doc), apellido: pa.apellido, nombre: pa.nombre,
         patente: '', foto_ids: '', cacheo_resultado: '', cacheo_foto_id: '', excepcional: '', alertas: pa.estado === 'PROHIBIDO' ? 'prohibido_sin_excepcion' : ''
@@ -334,12 +339,14 @@ function puestoAdentro_(r) {
   const labels = {};
   cfg.categorias.forEach(c => { labels[c.key] = c.label; });
   const desde = Date.now() - 7 * 86400000;
+  const vistos = {};
   const lista = readAll_(csheet_(a.ctx.cliente, 'Movimientos'))
     .filter(m => m.objetivo_id === a.ctx.objetivo.objetivo_id && m.sentido === 'INGRESO' && !m.salida_en && m.persona_id && !String(m.reg_id).match(/-a\d+$/) && new Date(m.cargado_en).getTime() > desde)
     .sort((x, y) => new Date(y.cargado_en) - new Date(x.cargado_en))
-    .slice(0, 200)
+    .filter(m => { if (vistos[m.persona_id]) return false; vistos[m.persona_id] = 1; return true; })   // una fila por persona
+    .slice(0, 500)
     .map(m => ({
-      reg_id: m.reg_id, nombre: m.apellido + ', ' + m.nombre,
+      reg_id: m.reg_id, nombre: m.apellido + ', ' + m.nombre, dni: String(m.nro_doc || ''), patente: String(m.patente || ''), lote: String(m.autoriza_lote || ''),
       detalle: (labels[m.categoria] || m.categoria) + (m.autoriza_lote ? ' · ' + (cfg.etiquetas.lote || 'Lote') + ' ' + m.autoriza_lote : (m.autoriza_tipo ? ' · ' + m.autoriza_tipo : '')),
       hora: fecha_(m.cargado_en, 'dd/MM HH:mm')
     }));
@@ -369,4 +376,68 @@ function avisar_(ctx, row, exc, alertas, g) {
     ].filter(x => x !== '');
     MailApp.sendEmail({ to: Array.from(new Set(dest)).join(','), subject: '[SG Ingresos] ' + titulo + ' · ' + ctx.objetivo.nombre, body: lineas.join('\n') });
   } catch (e) { console.error('avisar_', e); }
+}
+
+/**
+ * Si la persona ya figura adentro (ingreso sin salida) y vuelve a ingresar, el ingreso anterior se cierra
+ * como "salida no registrada" (salida_guardia = AUTO) para que no quede duplicada en "Adentro ahora".
+ * Devuelve cuántos cerró.
+ */
+function cerrarAbiertos_(shM, persona_id, objetivo_id, fecha) {
+  let n = 0;
+  findBy_(shM, 'persona_id', persona_id).forEach(x => {
+    if (x.objetivo_id !== objetivo_id || x.sentido !== 'INGRESO' || x.salida_en) return;
+    const al = String(x.alertas || '').split(',').filter(Boolean);
+    if (al.indexOf('salida_no_registrada') < 0) al.push('salida_no_registrada');
+    update_(shM, x._row, { salida_en: fecha, salida_guardia: 'AUTO', alertas: al.join(',') });
+    n++;
+  });
+  return n;
+}
+
+/**
+ * El vigilador registra una prohibición ordenada por Residente, Administración o Intendencia.
+ * Solo puede APLICAR una prohibición (lo más restrictivo); levantarla se hace desde el Panel.
+ */
+function puestoProhibir_(r) {
+  const a = puestoAuth_(r);
+  const ctx = a.ctx, g = a.g;
+  const p = r.prohibicion || {};
+  const reg_id = String(p.reg_id || '');
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(reg_id)) throw apiError_('reg_invalido', 'Registro inválido.');
+  const tiposValidos = (ctx.objetivo.config.autoriza && ctx.objetivo.config.autoriza.length) ? ctx.objetivo.config.autoriza : ['Encargado del local', 'Supervisor Spartan'];
+  const tipo = txt_(p.ordenado_tipo, 30);
+  if (tiposValidos.indexOf(tipo) < 0) throw apiError_('orden_invalida', 'Indicá quién ordena la prohibición.');
+  if (tipo === 'Residente' ? (!txt_(p.ordenado_lote) || !txt_(p.ordenado_nombre)) : !txt_(p.ordenado_nombre)) throw apiError_('orden_invalida', 'Indicá el nombre (y lote si es residente) de quien la ordena.');
+  if (!txt_(p.motivo)) throw apiError_('orden_invalida', 'Indicá el motivo.');
+  const nro = digits_(p.nro_doc);
+  const cli = ctx.cliente;
+  const ss = clienteSs_(cli);
+  return withLock_(() => {
+    const sh = sheet_(ss, 'Personas', CLIENTE_SCHEMA);
+    const per = findBy_(sh, 'nro_doc', nro)[0];
+    if (!per) throw apiError_('no_encontrado', 'La persona no tiene ficha. Registrala primero o pedí la prohibición al Panel.');
+    if (per.estado === 'PROHIBIDO') return { ya_prohibido: true };
+    const fecha = fechaCliente_(p.cargado_en, now_()).fecha;
+    const constancia = p.constancia ? guardarArchivo_(cli, ['prohibiciones', fecha_(fecha, 'yyyy-MM')], fecha_(fecha, 'dd-MM-yyyy_HHmm') + '_' + nro + '_constancia', p.constancia) : '';
+    update_(sh, per._row, { estado: 'PROHIBIDO', actualizado_en: now_(), actualizado_por: g.cuil });
+    histEstado_(ss, per, per.estado, 'PROHIBIDO', { tipo: tipo, nombre: p.ordenado_nombre, lote: p.ordenado_lote }, p.medio,
+      txt_(p.motivo, 280) + (constancia ? ' [constancia ' + constancia + ']' : ''), 'vigilador ' + g.cuil);
+    auditCliente_(ss, g.cuil, ctx.dispositivo_id, 'prohibir_desde_puesto', 'Personas', per.persona_id, per.estado, 'PROHIBIDO (ordenó ' + tipo + ')');
+    try {
+      const dest = String(cli.avisos || '').split(',').map(s => s.trim()).filter(Boolean);
+      readAll_(msheet_('UsuariosPanel')).forEach(u => {
+        const cl = String(u.clientes || '').split(',').map(s => s.trim());
+        if (activo_(u.activo) && u.rol === 'supervisor' && (cl.indexOf('*') >= 0 || cl.indexOf(cli.cliente_id) >= 0)) dest.push(u.email);
+      });
+      if (dest.length) MailApp.sendEmail({
+        to: Array.from(new Set(dest)).join(','),
+        subject: '[SG Ingresos] Nueva prohibición · ' + ctx.objetivo.nombre,
+        body: ['Se registró una prohibición desde el puesto ' + ctx.puesto.nombre + '.', 'Persona: ' + per.apellido + ', ' + per.nombre + ' (DNI ' + nro + ')',
+          'Ordenó: ' + tipo + ' ' + txt_(p.ordenado_nombre, 80) + (p.ordenado_lote ? ' · lote ' + txt_(p.ordenado_lote, 20) : '') + ' · por ' + txt_(p.medio, 30),
+          'Motivo: ' + txt_(p.motivo, 280), 'Vigilador: ' + g.nombre, '', 'Se puede levantar desde el Panel › Personas y prohibidos.'].join('\n')
+      });
+    } catch (e) { console.error('aviso prohibicion', e); }
+    return { ok: true };
+  });
 }
