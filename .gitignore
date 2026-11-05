@@ -1,0 +1,8 @@
+# Credenciales: nunca al repositorio
+.clasp.json
+.clasprc.json
+*.pem
+.env
+
+node_modules/
+.DS_Store

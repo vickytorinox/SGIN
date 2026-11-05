@@ -1,0 +1,11 @@
+{
+  "name": "sg-ingresos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plataforma de registro y control de ingresos de Spartan / SG Seguridad",
+  "scripts": {
+    "dev": "node dev/server.js",
+    "test": "node dev/test-api.js"
+  },
+  "engines": { "node": ">=18" }
+}
