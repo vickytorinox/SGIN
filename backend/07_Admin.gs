@@ -178,6 +178,7 @@ function adminUsuarioGuardar_(r) {
     const x = findBy_(sh, 'email', email)[0];
     if (x) update_(sh, x._row, datos);
     else append_(sh, Object.assign({ usuario_id: uid_(), email: email, creado_en: now_(), creado_por: u.email }, datos));
+    olvidarUsuarioCache_(email);   // el cambio de rol, clientes o baja rige al instante
     auditGlobal_(u.email, x ? 'editar_usuario' : 'crear_usuario', 'UsuariosPanel', email, '', JSON.stringify(datos));
     return { ok: true };
   });

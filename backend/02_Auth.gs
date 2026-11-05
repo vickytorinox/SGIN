@@ -46,15 +46,33 @@ function throttle_(clave, maxPorMinuto) {
   if (n > maxPorMinuto) throw apiError_('demasiados_intentos', 'Demasiados intentos. Esperá un minuto.');
 }
 
+/*
+ * Límite sobre intentos FALLIDOS (activación y login del Panel). Los intentos válidos no suman,
+ * así que alguien que manda pedidos basura no bloquea a los usuarios legítimos tan fácilmente.
+ */
+function limiteFallas_(clave, maxPorMinuto) {
+  const k = 'fail:' + clave + ':' + Math.floor(Date.now() / 60000);
+  if (Number(CacheService.getScriptCache().get(k) || 0) >= maxPorMinuto) {
+    throw apiError_('demasiados_intentos', 'Demasiados intentos. Esperá un minuto.');
+  }
+}
+
+function sumarFalla_(clave) {
+  const cache = CacheService.getScriptCache();
+  const k = 'fail:' + clave + ':' + Math.floor(Date.now() / 60000);
+  cache.put(k, String(Number(cache.get(k) || 0) + 1), 120);
+}
+
 /* ---------------- Dispositivos ---------------- */
 
 function activarDispositivo_(codigo) {
-  throttle_('activar', 20);
+  limiteFallas_('activar', 60);
   const h = hashSecreto_(normCodigo_(codigo));
   return withLock_(() => {
     const sh = msheet_('Dispositivos');
     const d = findBy_(sh, 'codigo_hash', h)[0];
     if (!d || d.estado !== 'pendiente' || new Date(d.codigo_vence) < now_()) {
+      sumarFalla_('activar');
       throw apiError_('codigo_invalido', 'Código inválido o vencido. Pedí uno nuevo a Spartan.');
     }
     const ctx = contextoPuesto_(d.puesto_id);
@@ -131,8 +149,17 @@ function olvidarGuardiaCache_(cuil) {
 /* ---------------- Panel / Admin (Google) ---------------- */
 
 function loginGoogle_(idToken) {
-  throttle_('glogin', 60);
+  limiteFallas_('glogin', 120);
   if (!idToken) throw apiError_('google_invalido', 'Falta el inicio de sesión de Google.');
+  try {
+    return loginGoogleVerificado_(idToken);
+  } catch (e) {
+    if (e && (e.code === 'google_invalido' || e.code === 'no_autorizado')) sumarFalla_('glogin');
+    throw e;
+  }
+}
+
+function loginGoogleVerificado_(idToken) {
   const res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken), { muteHttpExceptions: true });
   if (res.getResponseCode() !== 200) throw apiError_('google_invalido', 'No se pudo verificar la cuenta de Google.');
   const t = JSON.parse(res.getContentText());
@@ -153,11 +180,39 @@ function loginGoogle_(idToken) {
   return { sesion: sesion, usuario: user };
 }
 
+/**
+ * Estado vigente de un usuario del Panel según la hoja UsuariosPanel (caché de 60 s).
+ * Así, dar de baja a alguien o cambiarle rol o clientes rige enseguida, sin esperar que venza su sesión.
+ */
+function usuarioVigente_(email) {
+  const cache = CacheService.getScriptCache();
+  const k = 'uv:' + email;
+  const hit = cache.get(k);
+  if (hit) return hit === '-' ? null : JSON.parse(hit);
+  const x = findBy_(msheet_('UsuariosPanel'), 'email', email).filter(y => activo_(y.activo))[0];
+  const out = x ? { rol: x.rol, clientes: String(x.clientes || '').split(',').map(s => s.trim()).filter(Boolean) } : null;
+  cache.put(k, out ? JSON.stringify(out) : '-', 60);
+  return out;
+}
+
+function olvidarUsuarioCache_(email) {
+  CacheService.getScriptCache().remove('uv:' + String(email || '').toLowerCase());
+}
+
 function usuario_(sesion, roles) {
   if (!sesion) throw apiError_('sesion_vencida', 'Iniciá sesión de nuevo.');
-  const hit = CacheService.getScriptCache().get('ses:' + hashSecreto_(sesion));
+  const cache = CacheService.getScriptCache();
+  const ck = 'ses:' + hashSecreto_(sesion);
+  const hit = cache.get(ck);
   if (!hit) throw apiError_('sesion_vencida', 'Tu sesión venció. Iniciá sesión de nuevo.');
   const u = JSON.parse(hit);
+  const vig = usuarioVigente_(u.email);
+  if (!vig) {
+    cache.remove(ck);
+    throw apiError_('sesion_vencida', 'Tu acceso fue dado de baja. Si es un error, pedíselo a Spartan.');
+  }
+  u.rol = vig.rol;
+  u.clientes = vig.clientes;
   if (roles && roles.indexOf(u.rol) < 0) throw apiError_('sin_permiso', 'No tenés permiso para esta acción.');
   return u;
 }

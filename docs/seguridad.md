@@ -8,7 +8,7 @@ La API de Apps Script se publica para "cualquier persona" porque la App Puesto e
 | --- | --- | --- |
 | Celular del puesto | Token de 96 caracteres, obtenido canjeando un código de un solo uso (vence a las 48 h) | Hash del token en `Dispositivos`, estado activo, puesto, objetivo y cliente activos. El objetivo y el cliente **se deducen del token**, nunca de la URL. |
 | Vigilador | CUIL (11 dígitos), sobre el token del dispositivo | Vigilador activo y habilitado en ese puesto u objetivo |
-| Panel y Admin | "Iniciar sesión con Google": el backend verifica el ID token con Google (audiencia, emisor, mail verificado, vencimiento) | Mail en `UsuariosPanel`, rol y clientes asignados. La sesión dura 6 h y se guarda en caché con hash. |
+| Panel y Admin | "Iniciar sesión con Google": el backend verifica el ID token con Google (audiencia, emisor, mail verificado, vencimiento) | Mail en `UsuariosPanel`, rol y clientes asignados. La sesión dura 6 h y se guarda en caché con hash; en cada llamada se vuelve a leer el usuario (caché de 60 s), así que una baja o un cambio de rol o clientes rige enseguida. |
 
 ## Datos
 
@@ -24,13 +24,15 @@ La API de Apps Script se publica para "cualquier persona" porque la App Puesto e
 - **XSS:** el frontend inserta los datos siempre como texto (`textContent`), nunca como HTML. CSP restrictiva en las páginas.
 - **Fecha y hora:** se guarda la del celular (`cargado_en`) y la del servidor (`recibido_en`). Si el celular adelanta más de 10 minutos, se usa la del servidor y se marca la alerta `reloj_dispositivo`.
 - **Auditoría:** `AuditoriaGlobal` en la maestra y `Auditoria` en cada cliente, solo agregado y con hojas protegidas. Registra altas, cambios, logins, logins rechazados, consultas de prohibidos, ingresos excepcionales, vistas de archivos y backups.
-- **Prohibidos:** el puesto no puede aplicar ni levantar una prohibición. Si llega un ingreso de un prohibido sin excepción (por ejemplo, cargado sin señal con la lista vieja), se guarda igual con la alerta `prohibido_sin_excepcion` y se avisa por mail. Nunca se pierde el registro de lo que pasó.
-- **Fuerza bruta:** límite de intentos por minuto en activación, CUIL y login.
+- **Prohibidos:** el vigilador puede **aplicar** una prohibición ordenada por quien corresponda (queda registrado quién la ordenó, el motivo y el vigilador, y se avisa por mail); **levantarla** solo se puede desde el Panel. Si llega un ingreso de un prohibido sin excepción (por ejemplo, cargado sin señal con la lista vieja), se guarda igual con la alerta `prohibido_sin_excepcion` y se avisa por mail. Nunca se pierde el registro de lo que pasó.
+- **Fuerza bruta:** límite de intentos **fallidos** por minuto en activación (60) y login del Panel (120), así un tercero que manda basura no traba a los usuarios legítimos; límite por celular en el CUIL.
+- **Marcos (clickjacking):** las páginas se niegan a abrirse dentro de un iframe de otro sitio.
 
 ## Celular del puesto
 
 - Debe tener bloqueo de pantalla.
-- Si se pierde, se revoca desde Admin y deja de funcionar al instante.
+- Si se pierde, se revoca desde Admin y deja de funcionar al instante. En cuanto se conecta, borra todo lo que tenía guardado (prohibidos, residentes, fichas, configuración); los datos del cliente siguen en el servidor y otro celular los descarga al activarse. Solo conserva los registros pendientes de envío.
+- La lista de prohibidos sin señal está hasheada, pero con el celular en la mano se puede reconstruir: es el costo de que funcione offline. Por eso cada celular recibe solo los de su cliente y los borra al ser revocado.
 - La sesión del vigilador se bloquea tras 10 minutos sin uso y pide el CUIL de nuevo. La sesión de Google, que ya no hace falta en el celular, no interviene.
 - No borrar los datos del navegador ni desinstalar la app con registros pendientes. La app lo indica en rojo si hay registros con más de 2 h sin enviar.
 
