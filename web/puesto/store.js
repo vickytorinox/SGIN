@@ -31,7 +31,8 @@ function tx(store, mode, fn) {
 export const kv = {
   get: k => tx('kv', 'readonly', s => s.get(k)),
   set: (k, v) => tx('kv', 'readwrite', s => s.put(v, k)),
-  del: k => tx('kv', 'readwrite', s => s.delete(k))
+  del: k => tx('kv', 'readwrite', s => s.delete(k)),
+  clear: () => tx('kv', 'readwrite', s => s.clear())
 };
 
 export const cola = {

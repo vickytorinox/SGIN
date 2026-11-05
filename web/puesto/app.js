@@ -203,9 +203,15 @@ async function refrescar() {
 }
 setInterval(refrescar, REFRESH_MS);
 
+/**
+ * Celular revocado: se borra todo lo guardado EN ESTE CELULAR (token, prohibidos, residentes, fichas,
+ * configuración). Los datos del cliente siguen intactos en el servidor y un celular nuevo los descarga
+ * al activarse. Los registros pendientes de envío (cola) se conservan para no perder lo que pasó.
+ */
 async function desactivado(msg) {
   S.token = null;
-  await kv.del('token');
+  S.bundle = null;
+  await kv.clear();
   setSesion(null);
   go('activar', { msg: msg || 'Este celular fue desactivado.' });
 }

@@ -121,4 +121,26 @@ const t = dev.puesto_id===est.puestos.find(p=>p.nombre==='Acceso principal').pue
 r=P('puesto.sync',{token:t,cuil:'20123456789'}); ok(!r.ok && r.error==='dispositivo_invalido','dispositivo revocado deja de funcionar al instante');
 env.run('backupDiario'); ok(Object.values(env.files).filter(f=>/· \d{4}-\d{2}-\d{2}$/.test(f.name)).length===3,'backup diario: maestra + 2 clientes');
 
+// baja o cambio de un usuario del Panel rige al instante, sin esperar que venza la sesión
+{
+  const sAdm = P('panel.login',{idToken:'test:admin@alamos.test'}).data.sesion;
+  ok(P('panel.me',{sesion:sAdm}).ok,'usuario del panel con sesión activa');
+  const usr = P('admin.usuarios',{sesion:sAd}).data.usuarios.find(x=>x.email==='admin@alamos.test');
+  P('admin.usuario.guardar',{sesion:sAd,email:usr.email,nombre:usr.nombre,rol:usr.rol,clientes:usr.clientes,activo:false});
+  let rr = P('panel.me',{sesion:sAdm}); ok(!rr.ok && rr.error==='sesion_vencida','usuario dado de baja pierde la sesión al instante');
+  P('admin.usuario.guardar',{sesion:sAd,email:usr.email,nombre:usr.nombre,rol:usr.rol,clientes:usr.clientes,activo:true});
+  const sAdm2 = P('panel.login',{idToken:'test:admin@alamos.test'}).data.sesion;
+  P('admin.usuario.guardar',{sesion:sAd,email:usr.email,nombre:usr.nombre,rol:usr.rol,clientes:'',activo:true});
+  rr = P('panel.movimientos',{sesion:sAdm2,cliente_id:cB}); ok(!rr.ok && rr.error==='sin_permiso','quitarle un cliente rige al instante');
+  P('admin.usuario.guardar',{sesion:sAd,email:usr.email,nombre:usr.nombre,rol:usr.rol,clientes:usr.clientes,activo:true});
+}
+// los intentos válidos no consumen el límite; los fallidos sí
+{
+  let todos = true;
+  for (let i=0;i<130;i++) if (!P('panel.login',{idToken:'test:admin@spartan.test'}).ok) todos = false;
+  ok(todos,'130 logins válidos seguidos no se bloquean');
+  for (let i=0;i<120;i++) P('panel.login',{idToken:'basura'});
+  const rr = P('panel.login',{idToken:'test:admin@spartan.test'}); ok(!rr.ok && rr.error==='demasiados_intentos','120 fallidos en un minuto frenan el login');
+}
+
 if (process.exitCode) console.log('\nHAY FALLAS'); else console.log('\nTodas las pruebas pasaron.');
