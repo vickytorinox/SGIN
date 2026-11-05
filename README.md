@@ -65,7 +65,7 @@ Usar una cuenta de Google exclusiva del sistema, por ejemplo `sistemas@sgsegurid
 ### 3. Iniciar sesión con Google (Panel)
 
 1. En <https://console.cloud.google.com>, con la cuenta dueña: APIs y servicios › Pantalla de consentimiento (tipo Externo, solo nombre y mail de soporte) › Credenciales › Crear ID de cliente OAuth › Aplicación web.
-2. En "Orígenes autorizados de JavaScript", cargar el dominio donde va a vivir la web, por ejemplo `https://ingresos.sgseguridad.com` (y `https://<usuario>.github.io` si se usa ese).
+2. En "Orígenes autorizados de JavaScript", cargar el dominio donde va a vivir la web, por ejemplo `https://sgin.sgseguridad.com` (y `https://<usuario>.github.io` si se usa ese).
 3. Copiar el Client ID. En el editor de Apps Script ejecutar `configurarClientId("xxxx.apps.googleusercontent.com")`. Se puede crear una función temporal que lo llame y después borrarla.
 
 ### 4. Publicar la API
@@ -83,7 +83,7 @@ Copiar la URL que termina en `/exec` y el **ID de implementación**.
 
 1. En `web/config.js`, poner `API_URL` (la URL `/exec`) y `GOOGLE_CLIENT_ID`.
 2. En GitHub: Settings › Pages › Source: **GitHub Actions**. Cada cambio en `web/` se publica solo.
-3. Dominio propio (recomendado): en Settings › Pages cargar `ingresos.sgseguridad.com`, y en el DNS de sgseguridad.com crear un CNAME `ingresos` hacia `<usuario>.github.io`. Activar "Enforce HTTPS".
+3. Dominio propio (recomendado): en Settings › Pages cargar `sgin.sgseguridad.com`, y en el DNS de sgseguridad.com crear un CNAME `sgin` hacia `<usuario>.github.io`. Activar "Enforce HTTPS".
 
 > GitHub Pages desde un repositorio **privado** requiere un plan pago de GitHub (Pro o Team). La alternativa es que este repo sea público: no contiene secretos, y la seguridad no depende de esconder el código.
 
@@ -109,7 +109,7 @@ En el Panel, con tu cuenta de Admin Spartan:
 4. **Vigiladores**: alta con CUIL y puestos habilitados.
 5. **Usuarios del panel**: Administración e Intendencia del cliente (pueden ser Gmail personales), y supervisores.
 6. **Formulario por objetivo**: ajustar campos visibles y obligatorios, documentos, cacheo y etiquetas.
-7. En el celular del puesto: abrir `https://ingresos.sgseguridad.com/puesto/`, cargar el código, ingresar con CUIL y "Agregar a la pantalla de inicio".
+7. En el celular del puesto: abrir `https://sgin.sgseguridad.com/puesto/`, cargar el código, ingresar con CUIL y "Agregar a la pantalla de inicio".
 
 ## Mantenimiento
 
