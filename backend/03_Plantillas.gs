@@ -138,8 +138,12 @@ function normalizarConfig_(cfg, tipo, incluirInactivos) {
   (cfg.categorias || []).forEach(cc => {
     const cat = out.categorias.filter(x => x.key === cc.key)[0];
     if (!cat) return;
-    // campos base: solo visible / obligatorio / label / opciones
+    // Orden elegido en Admin: se respeta el orden en que vienen los campos.
+    const orden = [];
+    // campos base: solo visible / obligatorio / label / opciones (no se pueden eliminar, solo ocultar)
+    // campos extra: los que no vienen en la config quedan eliminados
     (cc.campos || []).forEach(f => {
+      if (f && f.key) orden.push(f.extra ? 'x_' + String(f.key).replace(/^x_/, '').replace(/[^a-z0-9_]/gi, '').slice(0, 30) : f.key);
       const b = cat.campos.filter(x => x.key === f.key)[0];
       if (b) {
         b.visible = !!f.visible;
@@ -157,6 +161,10 @@ function normalizarConfig_(cfg, tipo, incluirInactivos) {
         });
       }
     });
+    if (orden.length) {
+      const pos = k => { const i = orden.indexOf(k); return i < 0 ? 1000 : i; };
+      cat.campos = cat.campos.map((f, i) => ({ f: f, i: i })).sort((a, b) => (pos(a.f.key) - pos(b.f.key)) || (a.i - b.i)).map(x => x.f);
+    }
     (cc.docs || []).forEach(d => {
       const b = cat.docs.filter(x => x.key === d.key)[0];
       if (b) {

@@ -69,6 +69,23 @@ r=P('puesto.sync',{token:tB,cuil:'20123456789'}); ok(r.ok && r.data.prohibidos.d
 r=P('admin.objetivo.config',{sesion:sAd,objetivo_id:otros.objetivos[0].objetivo_id}); const cfg=r.data.config;
 cfg.categorias[0].campos.push({key:'locker',label:'N° de locker',tipo:'numero',extra:true,visible:true,obligatorio:true}); cfg.modulos.cacheo.aleatorio_cada=5;
 r=P('admin.objetivo.config',{sesion:sAd,objetivo_id:otros.objetivos[0].objetivo_id,config:cfg}); ok(r.ok && r.data.config.categorias[0].campos.some(f=>f.key==='x_locker') && r.data.config.modulos.cacheo.aleatorio_cada===5,'config: campo extra + cacheo aleatorio');
+
+// orden y eliminación de campos
+{
+  const oid = otros.objetivos[0].objetivo_id;
+  const c1 = P('admin.objetivo.config',{sesion:sAd,objetivo_id:oid}).data.config;
+  const merc = c1.categorias.find(c=>c.key==='mercaderia');
+  merc.campos.reverse();
+  merc.campos.push({key:'temp',label:'Temperatura',tipo:'numero',extra:true,visible:true,obligatorio:false});
+  let r2 = P('admin.objetivo.config',{sesion:sAd,objetivo_id:oid,config:c1});
+  const m2 = r2.data.config.categorias.find(c=>c.key==='mercaderia');
+  ok(m2.campos[0].key==='foto_remito' && m2.campos[m2.campos.length-1].key==='x_temp','config: se respeta el orden elegido');
+  m2.campos = m2.campos.filter(f=>f.key!=='x_temp');
+  m2.campos.splice(0,1); // intentar borrar un campo de plantilla
+  r2 = P('admin.objetivo.config',{sesion:sAd,objetivo_id:oid,config:r2.data.config});
+  const m3 = r2.data.config.categorias.find(c=>c.key==='mercaderia');
+  ok(!m3.campos.some(f=>f.key==='x_temp') && m3.campos.some(f=>f.key==='foto_remito'),'config: extra eliminado; campo de plantilla no se puede borrar');
+}
 // revocar
 const est=P('admin.estructura',{sesion:sAd}).data; const dev=est.dispositivos.find(d=>d.estado==='activo');
 r=P('admin.dispositivo.revocar',{sesion:sAd,dispositivo_id:dev.dispositivo_id}); ok(r.ok,'revocar dispositivo');

@@ -405,14 +405,29 @@ function pintarConfig(box, sel) {
   const etiq = input({ value: (C.etiquetas && C.etiquetas.lote) || '' });
   etiq.addEventListener('change', () => { C.etiquetas.lote = etiq.value; P.cfgDirty = true; guardar.disabled = false; });
 
-  const filaCampo = f => {
+  const mover = (i, d) => {
+    const j = i + d;
+    if (j < 0 || j >= cat.campos.length) return;
+    const t = cat.campos[i]; cat.campos[i] = cat.campos[j]; cat.campos[j] = t;
+    sucio();
+  };
+  const filaCampo = (f, i) => {
     const lab = input({ value: f.label });
     lab.addEventListener('change', () => { f.label = lab.value; P.cfgDirty = true; guardar.disabled = false; });
     return h('div', { class: 'cfggrid', style: 'padding:8px 0;border-top:1px solid #EEF2EF' },
       h('div', {}, lab, f.extra ? badge('EXTRA', 'ok') : null, f.tipo === 'lista' ? h('div', { class: 'muted', style: 'margin-top:4px' }, 'Opciones: ' + (f.opciones || []).join(', ')) : null),
       h('span', { class: 'muted' }, LABEL_TIPO[f.tipo] || f.tipo),
       sw(f.visible, () => { f.visible = !f.visible; if (!f.visible) f.obligatorio = false; sucio(); }),
-      sw(f.obligatorio, () => { f.obligatorio = !f.obligatorio; sucio(); }, !f.visible));
+      sw(f.obligatorio, () => { f.obligatorio = !f.obligatorio; sucio(); }, !f.visible),
+      h('div', { class: 'acciones' },
+        h('button', { type: 'button', class: 'mini', 'aria-label': 'Subir ' + f.label, title: 'Subir', disabled: i === 0, onclick: () => mover(i, -1) }, '↑'),
+        h('button', { type: 'button', class: 'mini', 'aria-label': 'Bajar ' + f.label, title: 'Bajar', disabled: i === cat.campos.length - 1, onclick: () => mover(i, 1) }, '↓'),
+        f.extra
+          ? h('button', { type: 'button', class: 'mini red', 'aria-label': 'Eliminar ' + f.label, title: 'Eliminar campo extra', onclick: () => {
+            if (!confirm('¿Eliminar el campo "' + f.label + '"? Los datos ya cargados en ingresos anteriores se conservan.')) return;
+            cat.campos.splice(i, 1); sucio();
+          } }, '✕')
+          : h('span', { class: 'mini ghost', title: 'Los campos de la plantilla no se eliminan: se ocultan con "Visible"' }, '')));
   };
   const agregarExtra = () => {
     const lab = input(), tipo = select(TIPOS_EXTRA), ops = input({ placeholder: 'Separadas por coma (solo para listas)' });
@@ -441,8 +456,9 @@ function pintarConfig(box, sel) {
         h('div', { class: 'card' },
           h('div', { class: 'spread' }, h('h2', { class: 'sect' }, cat.label), h('div', { class: 'row' }, h('span', { class: 'muted' }, 'Habilitado en este objetivo'), sw(cat.activa !== false, () => { cat.activa = cat.activa === false; sucio(); }))),
           cat.estados ? h('div', { class: 'row' }, h('span', { class: 'muted' }, 'Estado por defecto de una ficha nueva:'), chips(['AUTORIZADO', 'EVENTUAL'], cat.estado_default, v => { cat.estado_default = v; sucio(); })) : null,
-          h('div', { class: 'cfggrid', style: 'font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase' }, h('span', {}, 'Campo'), h('span', {}, 'Tipo'), h('span', {}, 'Visible'), h('span', {}, 'Obligatorio')),
+          h('div', { class: 'cfggrid', style: 'font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase' }, h('span', {}, 'Campo'), h('span', {}, 'Tipo'), h('span', {}, 'Visible'), h('span', {}, 'Obligatorio'), h('span', {}, 'Orden')),
           cat.campos.map(filaCampo),
+          h('p', { class: 'muted' }, 'El orden de esta lista es el orden en que el guardia ve los campos. Los campos de la plantilla no se eliminan: se ocultan apagando "Visible".'),
           h('div', { class: 'row' }, h('button', { class: 'btn2', type: 'button', onclick: agregarExtra }, '+ Agregar campo extra'), h('span', { class: 'muted' }, cat.campos.filter(x => x.extra).length + ' de 6'))),
         (cat.docs || []).length ? h('div', { class: 'card' }, h('h2', { class: 'sect' }, 'Documentos exigidos'),
           h('div', { class: 'cfggrid docs', style: 'font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase' }, h('span', {}, 'Documento'), h('span', {}, 'Vigencia (meses)'), h('span', {}, 'Pedir'), h('span', {}, 'Bloquea si falta')),
