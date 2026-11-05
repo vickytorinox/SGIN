@@ -158,9 +158,11 @@ VISTAS.movimientos = () => {
   const cols = [
     { label: 'Fecha', key: 'fecha' }, { label: 'Hora', key: 'hora' }, { label: 'Objetivo', key: 'objetivo' }, { label: 'Puesto', key: 'puesto' },
     { label: 'Categoría', key: 'categoria' }, { label: 'Tipo', key: 'tipo', render: r => badge(r.tipo, r.tipo === 'EGRESO' ? 'dark' : 'ok') },
-    { label: 'Apellido', key: 'apellido' }, { label: 'Nombre', key: 'nombre' }, { label: 'DNI', key: 'dni' }, { label: 'CUIL', key: 'cuil' },
+    { label: 'Apellido', key: 'apellido' }, { label: 'Nombre', key: 'nombre' }, { label: 'DNI', key: 'dni' },
+    { label: 'Salida / permanencia', key: 'salida', render: r => r.salida === 'Adentro' ? badge('Adentro', 'warn') : (/^No registrada/.test(r.salida) ? badge(r.salida, 'bad') : r.salida) },
+    { label: 'CUIL', key: 'cuil' },
     { label: 'Vigilador', key: 'vigilador' }, { label: 'Autoriza', key: 'autoriza' }, { label: 'Motivo', key: 'motivo' }, { label: 'Patente', key: 'patente' },
-    { label: 'Observaciones', key: 'observaciones' }, { label: 'Salida', key: 'salida' }, { label: 'Cacheo', key: 'cacheo' },
+    { label: 'Observaciones', key: 'observaciones' }, { label: 'Cacheo', key: 'cacheo' },
     { label: 'Foto de cacheo', key: 'foto_cacheo', render: r => r.foto_cacheo ? h('button', { class: 'link', type: 'button', onclick: e => { e.stopPropagation(); verArchivo(r.foto_cacheo); } }, 'Ver foto') : '', csv: r => r.foto_cacheo ? 'sí' : '' },
     { label: 'Otras fotos', key: 'fotos', render: r => r.fotos.length ? h('span', { class: 'row' }, r.fotos.map((id, i) => h('button', { class: 'link', type: 'button', onclick: e => { e.stopPropagation(); verArchivo(id); } }, 'Ver ' + (i + 1)))) : '', csv: r => r.fotos.length },
     { label: 'Alertas', key: 'alertas', render: r => [r.excepcional ? badge('Excepcional', 'bad') : null, r.alertas ? badge(r.alertas.replace(/_/g, ' '), 'warn') : null], csv: r => [r.excepcional, r.alertas].filter(Boolean).join(' | ') }

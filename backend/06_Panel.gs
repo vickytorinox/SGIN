@@ -38,47 +38,68 @@ function panelMovimientos_(r) {
   const hd = /^\d{2}:\d{2}$/.test(r.hdesde || '') ? r.hdesde : '';
   const hh = /^\d{2}:\d{2}$/.test(r.hhasta || '') ? r.hhasta : '';
 
-  const filas = readAll_(csheet_(c, 'Movimientos')).filter(m => {
-    const f = new Date(m.cargado_en);
+  // Cada movimiento es una fila. En los objetivos donde la salida cierra el ingreso (country),
+  // la salida se muestra además como su propia fila EGRESO, como en la planilla física.
+  const todas = [];
+  readAll_(csheet_(c, 'Movimientos')).forEach(m => {
+    todas.push({ m: m, sentido: m.sentido, fecha: new Date(m.cargado_en), cuil: m.guardia_cuil, esSalida: false });
+    if (m.sentido === 'INGRESO' && m.salida_en && m.salida_guardia !== 'AUTO') {
+      todas.push({ m: m, sentido: 'EGRESO', fecha: new Date(m.salida_en), cuil: m.salida_guardia, esSalida: true });
+    }
+  });
+
+  const filas = todas.filter(e => {
+    const m = e.m, f = e.fecha;
     if (!(f >= d0 && f <= d1)) return false;
     if (r.objetivo_id && m.objetivo_id !== r.objetivo_id) return false;
-    if (r.sentido && m.sentido !== r.sentido) return false;
+    if (r.sentido && e.sentido !== r.sentido) return false;
     if (r.categoria && m.categoria !== r.categoria) return false;
-    if (r.solo_alertas && !m.alertas && !m.excepcional) return false;
+    if (r.solo_alertas && (e.esSalida || (!m.alertas && !m.excepcional))) return false;
     if (dni && digits_(m.nro_doc).indexOf(dni) < 0) return false;
     if (words.length) { const n = norm_(m.nombre + ' ' + m.apellido); if (!words.every(w => n.indexOf(w) >= 0)) return false; }
     if (hd || hh) { const h = fecha_(f, 'HH:mm'); if (hd && h < hd) return false; if (hh && h > hh) return false; }
     return true;
-  }).sort((a, b) => new Date(b.cargado_en) - new Date(a.cargado_en));
+  }).sort((a, b) => b.fecha - a.fecha);
 
-  const ingresos = filas.filter(m => m.sentido === 'INGRESO').length;
-  const egresos = filas.filter(m => m.sentido === 'EGRESO');
-  const conFoto = egresos.filter(m => m.cacheo_foto_id).length;
+  const ingresos = filas.filter(e => e.sentido === 'INGRESO').length;
+  const egresos = filas.filter(e => e.sentido === 'EGRESO');
+  const egresosCacheables = egresos.filter(e => !e.esSalida);           // la foto de cacheo solo existe en egresos registrados como tales
+  const conFoto = egresosCacheables.filter(e => e.m.cacheo_foto_id).length;
   const personas = {};
-  filas.forEach(m => { if (m.nro_doc) personas[digits_(m.nro_doc)] = 1; });
+  filas.forEach(e => { if (e.m.nro_doc) personas[digits_(e.m.nro_doc)] = 1; });
 
-  const rows = filas.slice(0, APP.MAX_RESULTADOS_PANEL).map(m => {
+  const duracion = (a, b) => {
+    const min = Math.max(0, Math.round((b - a) / 60000));
+    return min < 60 ? min + ' min' : Math.floor(min / 60) + ' h ' + (min % 60) + ' min';
+  };
+
+  const rows = filas.slice(0, APP.MAX_RESULTADOS_PANEL).map(e => {
+    const m = e.m;
     const obj = mp.objetivos[m.objetivo_id] || { nombre: '', config: { categorias: [], etiquetas: {} } };
     const cat = obj.config.categorias.filter(x => x.key === m.categoria)[0];
-    const exc = json_parse_(m.excepcional, null);
-    const fotos = Object.values(json_parse_(m.foto_ids, {}) || {});
+    const exc = e.esSalida ? null : json_parse_(m.excepcional, null);
+    const fotos = e.esSalida ? [] : Object.values(json_parse_(m.foto_ids, {}) || {});
     if (exc && exc.constancia_id) fotos.push(exc.constancia_id);
+    let salida = '';
+    if (e.esSalida) salida = 'Ingresó ' + fecha_(m.cargado_en, 'dd/MM HH:mm') + ' · estuvo ' + duracion(new Date(m.cargado_en), e.fecha);
+    else if (m.salida_guardia === 'AUTO') salida = 'No registrada (cerrada al reingresar ' + fecha_(m.salida_en, 'dd/MM HH:mm') + ')';
+    else if (m.salida_en) salida = fecha_(m.salida_en, 'dd/MM HH:mm');
+    else if (m.sentido === 'INGRESO' && obj.config.modo_salida === 'cerrar') salida = 'Adentro';
     return {
-      fecha: fecha_(m.cargado_en, 'dd/MM/yyyy'), hora: fecha_(m.cargado_en, 'HH:mm'),
-      objetivo: obj.nombre, puesto: mp.puestos[m.puesto_id] || '', categoria: cat ? cat.label : m.categoria, tipo: m.sentido,
-      apellido: m.apellido, nombre: m.nombre, dni: String(m.nro_doc || ''), cuil: String(m.guardia_cuil || ''),
-      vigilador: mp.guardias[digits_(m.guardia_cuil)] || '', observaciones: m.observaciones,
+      fecha: fecha_(e.fecha, 'dd/MM/yyyy'), hora: fecha_(e.fecha, 'HH:mm'),
+      objetivo: obj.nombre, puesto: mp.puestos[m.puesto_id] || '', categoria: cat ? cat.label : m.categoria, tipo: e.sentido,
+      apellido: m.apellido, nombre: m.nombre, dni: String(m.nro_doc || ''), cuil: String(e.cuil || ''),
+      vigilador: mp.guardias[digits_(e.cuil)] || '', observaciones: e.esSalida ? '' : m.observaciones,
       autoriza: [m.autoriza_tipo, m.autoriza_lote ? (obj.config.etiquetas.lote || 'Lote') + ' ' + m.autoriza_lote : '', m.autoriza_apellido || m.autoriza_nombre].filter(Boolean).join(' · '),
-      motivo: m.motivo, patente: m.patente,
-      salida: m.salida_guardia === 'AUTO' ? 'No registrada (cerrada al reingresar ' + fecha_(m.salida_en, 'dd/MM HH:mm') + ')' : (m.salida_en ? fecha_(m.salida_en, 'dd/MM HH:mm') : ''),
-      cacheo: m.cacheo_resultado, foto_cacheo: m.cacheo_foto_id || '', fotos: fotos,
+      motivo: e.esSalida ? '' : m.motivo, patente: m.patente, salida: salida,
+      cacheo: e.esSalida ? '' : m.cacheo_resultado, foto_cacheo: e.esSalida ? '' : (m.cacheo_foto_id || ''), fotos: fotos,
       excepcional: exc ? (exc.autoriza_tipo + ' ' + [exc.nombre, exc.apellido].filter(Boolean).join(' ') + (exc.lote ? ' lote ' + exc.lote : '') + ' · ' + exc.medio + (exc.motivo ? ' · ' + exc.motivo : '')) : '',
-      alertas: String(m.alertas || '')
+      alertas: e.esSalida ? '' : String(m.alertas || '')
     };
   });
 
   return {
-    metricas: { total: filas.length, ingresos: ingresos, egresos: egresos.length, personas: Object.keys(personas).length, egresos_con_foto: egresos.length ? Math.round(conFoto * 100 / egresos.length) : null },
+    metricas: { total: filas.length, ingresos: ingresos, egresos: egresos.length, personas: Object.keys(personas).length, egresos_con_foto: egresosCacheables.length ? Math.round(conFoto * 100 / egresosCacheables.length) : null },
     rows: rows,
     truncado: filas.length > APP.MAX_RESULTADOS_PANEL
   };
