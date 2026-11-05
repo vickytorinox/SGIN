@@ -385,6 +385,23 @@ function formPuesto(o, alGuardar) {
   formSimple('Nuevo puesto · ' + o.nombre, [campo('Nombre del puesto', nom, true)],
     async () => { await call('admin.puesto.guardar', { objetivo_id: o.objetivo_id, nombre: nom.value }); toast('Puesto creado'); alGuardar(); });
 }
+function textoActivacion(puesto, codigo, vence, link) {
+  return 'Activación de SG Ingresos para el puesto "' + puesto + '".\n\n' +
+    '1. Abrí este link en el celular del puesto: ' + link + '\n' +
+    '2. Tocá "Activar este celular".\n' +
+    '3. En el menú del navegador elegí "Agregar a la pantalla de inicio".\n\n' +
+    'Si el link no abre, entrá a ' + link.split('#')[0] + ' y escribí el código ' + codigo + '.\n' +
+    'Sirve una sola vez y vence el ' + vence + '. No lo reenvíes.';
+}
+function copiarBtn(label, texto) {
+  const b = h('button', { class: 'btnsm', type: 'button' }, label);
+  b.onclick = async () => {
+    try { await navigator.clipboard.writeText(texto); b.textContent = 'Copiado ✓'; }
+    catch (e) { window.prompt('Copiá:', texto); }
+    setTimeout(() => { b.textContent = label; }, 2000);
+  };
+  return b;
+}
 async function generarCodigo(p, alGuardar) {
   const et = input({ value: 'Celular del puesto' });
   formSimple('Activar celular · ' + p.nombre, [campo('Etiqueta del dispositivo', et), h('p', { class: 'muted' }, 'Se genera un código de un solo uso, válido por 48 horas.')], async () => {
@@ -406,7 +423,17 @@ async function generarCodigo(p, alGuardar) {
           h('p', { class: 'muted' }, 'Sin cámara: abrí ' + base.replace(/^https?:\/\//, '') + '/puesto y escribí el código.'))),
       h('div', { class: 'code' }, r.codigo),
       h('p', { class: 'muted' }, 'Vence el ' + r.vence + ' y sirve una sola vez.'),
-      h('div', { class: 'banner warn' }, 'Este código y su QR se muestran una sola vez. No los envíes por grupos ni los dejes impresos a la vista.'));
+      h('div', { class: 'card', style: 'gap:10px;padding:14px 16px' },
+        h('strong', {}, 'Instalación a distancia'),
+        h('p', { class: 'muted' }, 'Enviá el link por mensaje privado a quien tenga el celular del puesto: lo abre, toca "Activar este celular" y listo. También puede abrir ' + base.replace(/^https?:\/\//, '') + '/puesto y escribir el código.'),
+        h('div', { class: 'row' },
+          copiarBtn('Copiar link de activación', link),
+          copiarBtn('Copiar código', r.codigo),
+          navigator.share ? h('button', { class: 'btnsm', type: 'button', onclick: () => navigator.share({ title: 'Activar SG Ingresos', text: textoActivacion(p.nombre, r.codigo, r.vence, link) }).catch(() => {}) }, 'Compartir…') : null,
+          h('a', { class: 'btnsm', style: 'display:inline-flex;align-items:center;text-decoration:none', target: '_blank', rel: 'noopener', href: 'https://wa.me/?text=' + encodeURIComponent(textoActivacion(p.nombre, r.codigo, r.vence, link)) }, 'Enviar por WhatsApp'),
+          h('a', { class: 'btnsm', style: 'display:inline-flex;align-items:center;text-decoration:none', href: 'mailto:?subject=' + encodeURIComponent('Activación SG Ingresos · ' + p.nombre) + '&body=' + encodeURIComponent(textoActivacion(p.nombre, r.codigo, r.vence, link)) }, 'Enviar por mail')),
+        h('p', { class: 'muted' }, 'Si el link llega a otra persona o se activa un celular equivocado: revocá ese dispositivo y generá un código nuevo.')),
+      h('div', { class: 'banner warn' }, 'El código, el QR y el link se muestran una sola vez. Envialos solo por mensaje privado, nunca a grupos.'));
     alGuardar();
   });
 }
