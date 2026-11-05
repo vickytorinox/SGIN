@@ -1,0 +1,20 @@
+name: Pruebas
+
+# Corre las pruebas del backend en cada pull request hacia main.
+# La regla de la rama main puede exigir que este check ("pruebas") pase antes del merge.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: node dev/test-api.js
